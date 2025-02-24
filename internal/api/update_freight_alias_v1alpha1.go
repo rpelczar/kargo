@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 // UpdateFreightAlias updates a piece of Freight's human-friendly alias.

@@ -25,24 +25,26 @@ import (
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/helm"
 	intyaml "github.com/akuity/kargo/internal/yaml"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	"github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_helmChartUpdater_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           dirsdk.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path is not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty",
-			config: Config{
+			config: dirsdk.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -51,15 +53,15 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name:   "charts is null",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): charts is required",
 			},
 		},
 		{
 			name: "charts is empty",
-			config: Config{
-				"charts": []Config{},
+			config: dirsdk.Config{
+				"charts": []dirsdk.Config{},
 			},
 			expectedProblems: []string{
 				"charts: Array must have at least 1 items",
@@ -67,8 +69,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "repository not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: dirsdk.Config{
+				"charts": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: repository is required",
@@ -76,8 +78,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "repository is empty",
-			config: Config{
-				"charts": []Config{{
+			config: dirsdk.Config{
+				"charts": []dirsdk.Config{{
 					"repository": "",
 				}},
 			},
@@ -87,8 +89,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "name not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: dirsdk.Config{
+				"charts": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: name is required",
@@ -96,8 +98,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "name is empty",
-			config: Config{
-				"charts": []Config{{
+			config: dirsdk.Config{
+				"charts": []dirsdk.Config{{
 					"name": "",
 				}},
 			},
@@ -107,8 +109,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "version not specified",
-			config: Config{
-				"charts": []Config{{}},
+			config: dirsdk.Config{
+				"charts": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"charts.0: version is required",
@@ -116,8 +118,8 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "version is empty",
-			config: Config{
-				"charts": []Config{{
+			config: dirsdk.Config{
+				"charts": []dirsdk.Config{{
 					"version": "",
 				}},
 			},
@@ -127,9 +129,9 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: dirsdk.Config{
 				"path": "fake-path",
-				"charts": []Config{
+				"charts": []dirsdk.Config{
 					{
 						"repository": "fake-repository",
 						"name":       "fake-chart",
@@ -140,13 +142,11 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 		},
 	}
 
-	r := newHelmChartUpdater()
-	runner, ok := r.(*helmChartUpdater)
-	require.True(t, ok)
+	updater := newHelmChartUpdater()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := runner.validate(testCase.config)
+			err := updater.validate(testCase.config)
 			if len(testCase.expectedProblems) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -158,18 +158,18 @@ func Test_helmChartUpdater_validate(t *testing.T) {
 	}
 }
 
-func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
+func Test_helmChartUpdater_promote(t *testing.T) {
 	tests := []struct {
 		name            string
-		context         *PromotionStepContext
-		cfg             HelmUpdateChartConfig
+		context         *dirsdk.PromotionStepContext
+		cfg             builtins.HelmUpdateChartConfig
 		chartMetadata   *chart.Metadata
 		setupRepository func(t *testing.T) (string, func())
-		assertions      func(*testing.T, string, PromotionStepResult, error)
+		assertions      func(*testing.T, string, *dirsdk.PromotionStepResult, error)
 	}{
 		{
 			name: "successful run with HTTP repository",
-			context: &PromotionStepContext{
+			context: &dirsdk.PromotionStepContext{
 				Project: "test-project",
 				Freight: kargoapi.FreightCollection{
 					Freight: map[string]kargoapi.FreightReference{
@@ -187,9 +187,9 @@ func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 					},
 				},
 			},
-			cfg: HelmUpdateChartConfig{
+			cfg: builtins.HelmUpdateChartConfig{
 				Path: "testchart",
-				Charts: []Chart{
+				Charts: []builtins.Chart{
 					{
 						Repository: "https://charts.example.com",
 						Name:       "examplechart",
@@ -223,9 +223,9 @@ func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 
 				return httpRepository.URL, httpRepository.Close
 			},
-			assertions: func(t *testing.T, tempDir string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, tempDir string, result *dirsdk.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, &dirsdk.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"commitMessage": `Updated chart dependencies for testchart
@@ -291,7 +291,7 @@ func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(chartPath, "Chart.yaml"), b, 0o600))
 			}
 
-			result, err := runner.runPromotionStep(context.Background(), stepCtx, tt.cfg)
+			result, err := runner.promote(context.Background(), stepCtx, tt.cfg)
 			tt.assertions(t, stepCtx.WorkDir, result, err)
 
 			// Assert that the Helm cache directory was not used
@@ -303,14 +303,14 @@ func Test_helmChartUpdater_runPromotionStep(t *testing.T) {
 func Test_helmChartUpdater_processChartUpdates(t *testing.T) {
 	tests := []struct {
 		name              string
-		cfg               HelmUpdateChartConfig
+		cfg               builtins.HelmUpdateChartConfig
 		chartDependencies []chartDependency
 		assertions        func(*testing.T, []intyaml.Update, error)
 	}{
 		{
 			name: "chart with version specified",
-			cfg: HelmUpdateChartConfig{
-				Charts: []Chart{
+			cfg: builtins.HelmUpdateChartConfig{
+				Charts: []builtins.Chart{
 					{
 						Repository: "https://charts.example.com",
 						Name:       "origin-chart",
@@ -332,8 +332,8 @@ func Test_helmChartUpdater_processChartUpdates(t *testing.T) {
 		},
 		{
 			name: "update specified for non-existent chart dependency",
-			cfg: HelmUpdateChartConfig{
-				Charts: []Chart{
+			cfg: builtins.HelmUpdateChartConfig{
+				Charts: []builtins.Chart{
 					{
 						Repository: "https://charts.example.com",
 						Name:       "origin-chart",
@@ -414,7 +414,7 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 		// Run the promotion step and assert the dependencies are updated
 		newVersions, err := runner.updateDependencies(
 			context.Background(),
-			&PromotionStepContext{},
+			&dirsdk.PromotionStepContext{},
 			t.TempDir(),
 			chartPath,
 			nil,
@@ -478,14 +478,17 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 		}
 
 		// Run the promotion step and assert the dependency is updated
-		newVersions, err := runner.updateDependencies(context.Background(), &PromotionStepContext{
-			CredentialsDB: credentialsDB,
-		}, t.TempDir(), chartPath, []chartDependency{
-			{
-				Name:       "demo",
-				Repository: "oci://" + repositoryRef,
+		ctx := contextWithCredentialsDB(context.Background(), credentialsDB)
+		newVersions, err := runner.updateDependencies(
+			ctx,
+			&dirsdk.PromotionStepContext{},
+			t.TempDir(), chartPath, []chartDependency{
+				{
+					Name:       "demo",
+					Repository: "oci://" + repositoryRef,
+				},
 			},
-		})
+		)
 		require.NoError(t, err)
 		require.DirExists(t, filepath.Join(chartPath, "charts"))
 		assert.FileExists(t, filepath.Join(chartPath, "charts", "demo-0.1.0.tgz"))
@@ -568,9 +571,14 @@ func Test_helmChartUpdater_updateDependencies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helmHome, chartPath := t.TempDir(), t.TempDir()
-			_, err := runner.updateDependencies(context.Background(), &PromotionStepContext{
-				CredentialsDB: tt.credentialsDB,
-			}, helmHome, chartPath, tt.chartDependencies)
+			ctx := contextWithCredentialsDB(context.Background(), tt.credentialsDB)
+			_, err := runner.updateDependencies(
+				ctx,
+				&dirsdk.PromotionStepContext{},
+				helmHome,
+				chartPath,
+				tt.chartDependencies,
+			)
 			tt.assertions(t, helmHome, chartPath, err)
 		})
 	}

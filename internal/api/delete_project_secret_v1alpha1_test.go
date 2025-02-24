@@ -18,7 +18,7 @@ import (
 	"github.com/akuity/kargo/internal/api/config"
 	"github.com/akuity/kargo/internal/api/kubernetes"
 	"github.com/akuity/kargo/internal/api/validation"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 func TestDeleteProjectSecret(t *testing.T) {

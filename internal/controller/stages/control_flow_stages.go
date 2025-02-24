@@ -15,9 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	rollouts "github.com/akuity/kargo/api/rollouts/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller"
-	rollouts "github.com/akuity/kargo/internal/controller/rollouts/api/v1alpha1"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/indexer"
 	"github.com/akuity/kargo/internal/kargo"
 	"github.com/akuity/kargo/internal/kubeclient"
@@ -210,7 +211,7 @@ func (r *ControlFlowStageReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// Ensure the Stage has a finalizer and requeue if it was added.
 	// The reason to requeue is to ensure that a possible deletion of the Stage
 	// directly after the finalizer was added is handled without delay.
-	if ok, err := kargoapi.EnsureFinalizer(ctx, r.client, stage); ok || err != nil {
+	if ok, err := helpers.EnsureFinalizer(ctx, r.client, stage); ok || err != nil {
 		return ctrl.Result{Requeue: ok}, err
 	}
 
@@ -253,7 +254,7 @@ func (r *ControlFlowStageReconciler) reconcile(
 
 	// Get the available Freight for the Stage.
 	logger.Debug("getting available Freight")
-	freight, err := stage.ListAvailableFreight(ctx, r.client)
+	freight, err := helpers.ListAvailableFreight(ctx, stage, r.client)
 	if err != nil {
 		newStatus.Message = err.Error()
 		return newStatus, err
@@ -290,7 +291,7 @@ func (r *ControlFlowStageReconciler) initializeStatus(stage *kargoapi.Stage) kar
 	newStatus.Message = ""
 
 	// Record the current refresh token as having been handled.
-	if token, ok := kargoapi.RefreshAnnotationValue(stage.GetAnnotations()); ok {
+	if token, ok := helpers.RefreshAnnotationValue(stage.GetAnnotations()); ok {
 		newStatus.LastHandledRefresh = token
 	}
 
@@ -329,7 +330,7 @@ func (r *ControlFlowStageReconciler) markFreightVerifiedForStage(
 		// client does not support != field selectors, so we would need a "real"
 		// Kubernetes API server to test it. Until we (finally) make use of testenv,
 		// this will have to do.
-		if f.IsVerifiedIn(stage.Name) {
+		if helpers.IsVerifiedIn(&f, stage.Name) {
 			continue
 		}
 
@@ -338,7 +339,7 @@ func (r *ControlFlowStageReconciler) markFreightVerifiedForStage(
 		if newStatus.VerifiedIn == nil {
 			newStatus.VerifiedIn = make(map[string]kargoapi.VerifiedStage)
 		}
-		newStatus.AddVerifiedStage(stage.Name, finishTime)
+		helpers.AddVerifiedStage(newStatus, stage.Name, finishTime)
 		if err := kubeclient.PatchStatus(ctx, r.client, &f, func(status *kargoapi.FreightStatus) {
 			*status = *newStatus
 		}); err != nil {
@@ -415,7 +416,7 @@ func (r *ControlFlowStageReconciler) handleDelete(ctx context.Context, stage *ka
 	}
 
 	// Remove the finalizer from the Stage.
-	if err := kargoapi.RemoveFinalizer(ctx, r.client, stage); err != nil {
+	if err := helpers.RemoveFinalizer(ctx, r.client, stage); err != nil {
 		return fmt.Errorf("error removing finalizer from Stage: %w", err)
 	}
 

@@ -27,105 +27,100 @@ import (
 	"github.com/akuity/kargo/internal/helm"
 	"github.com/akuity/kargo/internal/logging"
 	intyaml "github.com/akuity/kargo/internal/yaml"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(
-		newHelmChartUpdater(),
-		&StepRunnerPermissions{
-			AllowKargoClient:   true,
-			AllowCredentialsDB: true,
-		},
-	)
+	Register(newHelmChartUpdater())
 }
 
-// helmChartUpdater is an implementation of the PromotionStepRunner interface
-// that updates the dependencies of a Helm chart.
+// helmChartUpdater is an implementation of the Promoter interface that updates
+// the dependencies of a Helm chart.
 type helmChartUpdater struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newHelmChartUpdater returns an implementation of the PromotionStepRunner
-// interface that updates the dependencies of a Helm chart.
-func newHelmChartUpdater() PromotionStepRunner {
+// newHelmChartUpdater returns an initialized helmChartUpdater.
+func newHelmChartUpdater() *helmChartUpdater {
 	r := &helmChartUpdater{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the Namer interface.
 func (h *helmChartUpdater) Name() string {
 	return "helm-update-chart"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
-func (h *helmChartUpdater) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (h *helmChartUpdater) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
+	failure := &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := h.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
 	// Convert the configuration into a typed struct
-	cfg, err := ConfigToStruct[HelmUpdateChartConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.HelmUpdateChartConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", h.Name(), err)
 	}
 
-	return h.runPromotionStep(ctx, stepCtx, cfg)
+	return h.promote(ctx, stepCtx, cfg)
 }
 
 // validate validates helmChartUpdater configuration against a JSON schema.
-func (h *helmChartUpdater) validate(cfg Config) error {
+func (h *helmChartUpdater) validate(cfg dirsdk.Config) error {
 	return validate(h.schemaLoader, gojsonschema.NewGoLoader(cfg), h.Name())
 }
 
-func (h *helmChartUpdater) runPromotionStep(
+func (h *helmChartUpdater) promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-	cfg HelmUpdateChartConfig,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+	cfg builtins.HelmUpdateChartConfig,
+) (*dirsdk.PromotionStepResult, error) {
 	absChartPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to join path %q: %w", cfg.Path, err)
 	}
 
 	chartFilePath := filepath.Join(absChartPath, "Chart.yaml")
 	chartDependencies, err := readChartDependencies(chartFilePath)
 	if err != nil {
-		return PromotionStepResult{
+		return &dirsdk.PromotionStepResult{
 			Status: kargoapi.PromotionPhaseErrored,
 		}, fmt.Errorf("failed to load chart dependencies from %q: %w", chartFilePath, err)
 	}
 
 	changes, err := h.processChartUpdates(cfg, chartDependencies)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	if err = intyaml.SetStringsInFile(chartFilePath, changes); err != nil {
-		return PromotionStepResult{
+		return &dirsdk.PromotionStepResult{
 			Status: kargoapi.PromotionPhaseErrored,
 		}, fmt.Errorf("failed to update chart dependencies in %q: %w", chartFilePath, err)
 	}
 
 	helmHome, err := os.MkdirTemp("", "helm-chart-update-")
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to create temporary Helm home directory: %w", err)
 	}
 	defer os.RemoveAll(helmHome)
 
 	newVersions, err := h.updateDependencies(ctx, stepCtx, helmHome, absChartPath, chartDependencies)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
-	result := PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
+	result := &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
 	if commitMsg := h.generateCommitMessage(cfg.Path, newVersions); commitMsg != "" {
 		result.Output = map[string]any{
 			"commitMessage": commitMsg,
@@ -135,7 +130,7 @@ func (h *helmChartUpdater) runPromotionStep(
 }
 
 func (h *helmChartUpdater) processChartUpdates(
-	cfg HelmUpdateChartConfig,
+	cfg builtins.HelmUpdateChartConfig,
 	chartDependencies []chartDependency,
 ) ([]intyaml.Update, error) {
 	updates := make([]intyaml.Update, len(cfg.Charts))
@@ -163,7 +158,7 @@ func (h *helmChartUpdater) processChartUpdates(
 
 func (h *helmChartUpdater) updateDependencies(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *dirsdk.PromotionStepContext,
 	helmHome, chartPath string,
 	chartDependencies []chartDependency,
 ) (map[string]string, error) {
@@ -183,9 +178,10 @@ func (h *helmChartUpdater) updateDependencies(
 		}
 	}
 
-	if err = h.setupDependencyRepositories(
+	credsDB := credentialsDBFromContext(ctx)
+	if err = h.setupDependencyRepositories( // nolint: forcetypeassert
 		ctx,
-		stepCtx.CredentialsDB,
+		credsDB,
 		registryClient,
 		repositoryFile,
 		stepCtx.Project,

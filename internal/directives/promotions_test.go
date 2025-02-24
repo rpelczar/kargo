@@ -14,18 +14,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
-type mockRetryableRunner struct {
+type mockRetryablePromoter struct {
+	*mockPromoter
 	defaultTimeout        *time.Duration
 	defaultErrorThreshold uint32
 }
 
-func (m mockRetryableRunner) DefaultTimeout() *time.Duration {
+// RunPromotionStep implements the RetryablePromoter interface.
+func (m *mockRetryablePromoter) DefaultTimeout() *time.Duration {
 	return m.defaultTimeout
 }
 
-func (m mockRetryableRunner) DefaultErrorThreshold() uint32 {
+// RunPromotionStep implements the RetryablePromoter interface.
+func (m *mockRetryablePromoter) DefaultErrorThreshold() uint32 {
 	return m.defaultErrorThreshold
 }
 
@@ -33,7 +37,7 @@ func TestPromotionStep_GetTimeout(t *testing.T) {
 	tests := []struct {
 		name       string
 		step       *PromotionStep
-		runner     any
+		promoter   Promoter
 		assertions func(t *testing.T, result *time.Duration)
 	}{
 		{
@@ -46,7 +50,7 @@ func TestPromotionStep_GetTimeout(t *testing.T) {
 			},
 		},
 		{
-			name: "returns configured timeout for non-retryable runner",
+			name: "returns configured timeout for non-retryable Promoter",
 			step: &PromotionStep{
 				Retry: &kargoapi.PromotionStepRetry{
 					Timeout: &metav1.Duration{
@@ -54,13 +58,13 @@ func TestPromotionStep_GetTimeout(t *testing.T) {
 					},
 				},
 			},
-			runner: nil,
+			promoter: nil,
 			assertions: func(t *testing.T, result *time.Duration) {
 				assert.Equal(t, ptr.To(time.Duration(5)), result)
 			},
 		},
 		{
-			name: "returns configured timeout for retryable runner",
+			name: "returns configured timeout for retryable Promoter",
 			step: &PromotionStep{
 				Retry: &kargoapi.PromotionStepRetry{
 					Timeout: &metav1.Duration{
@@ -68,7 +72,7 @@ func TestPromotionStep_GetTimeout(t *testing.T) {
 					},
 				},
 			},
-			runner: mockRetryableRunner{defaultTimeout: ptr.To(time.Duration(3))},
+			promoter: &mockRetryablePromoter{defaultTimeout: ptr.To(time.Duration(3))},
 			assertions: func(t *testing.T, result *time.Duration) {
 				assert.Equal(t, ptr.To(time.Duration(5)), result)
 			},
@@ -78,7 +82,7 @@ func TestPromotionStep_GetTimeout(t *testing.T) {
 			step: &PromotionStep{
 				Retry: &kargoapi.PromotionStepRetry{},
 			},
-			runner: mockRetryableRunner{defaultTimeout: ptr.To(time.Duration(3))},
+			promoter: &mockRetryablePromoter{defaultTimeout: ptr.To(time.Duration(3))},
 			assertions: func(t *testing.T, result *time.Duration) {
 				assert.Equal(t, ptr.To(time.Duration(3)), result)
 			},
@@ -87,7 +91,7 @@ func TestPromotionStep_GetTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.step.GetTimeout(tt.runner)
+			result := tt.step.GetTimeout(tt.promoter)
 			tt.assertions(t, result)
 		})
 	}
@@ -97,7 +101,7 @@ func TestPromotionStep_GetErrorThreshold(t *testing.T) {
 	tests := []struct {
 		name       string
 		step       *PromotionStep
-		runner     any
+		promoter   Promoter
 		assertions func(t *testing.T, result uint32)
 	}{
 		{
@@ -110,25 +114,25 @@ func TestPromotionStep_GetErrorThreshold(t *testing.T) {
 			},
 		},
 		{
-			name: "returns configured threshold for non-retryable runner",
+			name: "returns configured threshold for non-retryable Promoter",
 			step: &PromotionStep{
 				Retry: &kargoapi.PromotionStepRetry{
 					ErrorThreshold: 5,
 				},
 			},
-			runner: nil,
+			promoter: nil,
 			assertions: func(t *testing.T, result uint32) {
 				assert.Equal(t, uint32(5), result)
 			},
 		},
 		{
-			name: "returns configured threshold for retryable runner",
+			name: "returns configured threshold for retryable Promoter",
 			step: &PromotionStep{
 				Retry: &kargoapi.PromotionStepRetry{
 					ErrorThreshold: 5,
 				},
 			},
-			runner: mockRetryableRunner{defaultErrorThreshold: 3},
+			promoter: &mockRetryablePromoter{defaultErrorThreshold: 3},
 			assertions: func(t *testing.T, result uint32) {
 				assert.Equal(t, uint32(5), result)
 			},
@@ -140,7 +144,7 @@ func TestPromotionStep_GetErrorThreshold(t *testing.T) {
 					ErrorThreshold: 0,
 				},
 			},
-			runner: mockRetryableRunner{defaultErrorThreshold: 3},
+			promoter: &mockRetryablePromoter{defaultErrorThreshold: 3},
 			assertions: func(t *testing.T, result uint32) {
 				assert.Equal(t, uint32(3), result)
 			},
@@ -149,7 +153,7 @@ func TestPromotionStep_GetErrorThreshold(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.step.GetErrorThreshold(tt.runner)
+			result := tt.step.GetErrorThreshold(tt.promoter)
 			tt.assertions(t, result)
 		})
 	}
@@ -196,9 +200,9 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 	testCases := []struct {
 		name        string
 		promoCtx    PromotionContext
-		promoState  State
+		promoState  dirsdk.State
 		rawCfg      []byte
-		expectedCfg Config
+		expectedCfg dirsdk.Config
 	}{
 		{
 			name: "test context",
@@ -213,7 +217,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"stage": "${{ ctx.stage }}",
 				"promotion": "${{ ctx.promotion }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"project":   "fake-project",
 				"stage":     "fake-stage",
 				"promotion": "fake-promotion",
@@ -240,7 +244,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"secret2-3": "${{ secrets.secret2.key3 }}",
 				"secret2-4": "${{ secrets.secret2.key4 }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"secret1-1": "value1",
 				"secret1-2": "value2",
 				"secret2-3": "value3",
@@ -271,7 +275,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"boolVar": "${{ vars.boolVar }}",
 				"numVar": "${{ vars.numVar }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"strVar":  "foo",
 				"boolVar": true,
 				"numVar":  42,
@@ -301,7 +305,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"boolVar": "${{ vars.boolVar }}",
 				"numVar": "${{ vars.numVar }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"strVar":  "foo",
 				"boolVar": true,
 				"numVar":  42,
@@ -310,7 +314,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 		{
 			name: "test outputs",
 			// Test that expressions can reference outputs
-			promoState: State{
+			promoState: dirsdk.State{
 				"strOutput":  "foo",
 				"boolOutput": true,
 				"numOutput":  42,
@@ -320,7 +324,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"boolOutput": "${{ outputs.boolOutput }}",
 				"numOutput": "${{ outputs.numOutput }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"strOutput":  "foo",
 				"boolOutput": true,
 				"numOutput":  42,
@@ -340,7 +344,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"origin1": "${{ warehouse('fake-warehouse') }}",
 				"origin2": "${{ warehouse(vars.warehouseName) }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"origin1": map[string]any{
 					"kind": "Warehouse",
 					"name": "fake-warehouse",
@@ -399,7 +403,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"commitID3": "${{ commitFrom('https://fake-git-repo', warehouse('fake-warehouse')).ID }}",
 				"commitID4": "${{ commitFrom(vars.repoURL, warehouse(vars.warehouseName)).ID }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"commitID1": "fake-commit-id",
 				"commitID2": "fake-commit-id",
 				"commitID3": "fake-commit-id",
@@ -454,7 +458,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"imageTag3": "${{ imageFrom('fake-image-repo', warehouse('fake-warehouse')).Tag }}",
 				"imageTag4": "${{ imageFrom(vars.repoURL, warehouse(vars.warehouseName)).Tag }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"imageTag1": "fake-image-tag",
 				"imageTag2": "fake-image-tag",
 				"imageTag3": "fake-image-tag",
@@ -531,7 +535,7 @@ func TestPromotionStep_GetConfig(t *testing.T) {
 				"chartVersion7": "${{ chartFrom('https://fake-chart-repo', 'fake-chart', warehouse('fake-warehouse')).Version }}",
 				"chartVersion8": "${{ chartFrom(vars.repoURL, vars.chartName, warehouse(vars.warehouseName)).Version }}"
 			}`),
-			expectedCfg: Config{
+			expectedCfg: dirsdk.Config{
 				"chartVersion1": "fake-oci-chart-version",
 				"chartVersion2": "fake-oci-chart-version",
 				"chartVersion3": "fake-oci-chart-version",
@@ -564,7 +568,7 @@ func TestPromotionStep_Skip(t *testing.T) {
 		name       string
 		step       *PromotionStep
 		ctx        PromotionContext
-		state      State
+		state      dirsdk.State
 		assertions func(*testing.T, bool, error)
 	}{
 		{
@@ -598,7 +602,7 @@ func TestPromotionStep_Skip(t *testing.T) {
 			step: &PromotionStep{
 				If: "${{ outputs.foo == 'bar' }}",
 			},
-			state: State{
+			state: dirsdk.State{
 				"foo": "bar",
 			},
 			assertions: func(t *testing.T, b bool, err error) {
@@ -612,7 +616,7 @@ func TestPromotionStep_Skip(t *testing.T) {
 				Alias: "task::other-alias",
 				If:    "${{ task.outputs.alias.foo == 'bar' }}",
 			},
-			state: State{
+			state: dirsdk.State{
 				"task::alias": map[string]any{
 					"foo": "baz",
 				},

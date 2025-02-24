@@ -14,6 +14,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	libargocd "github.com/akuity/kargo/internal/argocd"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 const applicationStatusesKey = "applicationStatuses"
@@ -54,14 +55,14 @@ type compositeError interface {
 	Unwrap() []error
 }
 
-// RunHealthCheckStep implements the Directive interface.
-func (a *argocdUpdater) RunHealthCheckStep(
+// CheckHealth implements the HealthChecker interface.
+func (a *argocdUpdater) CheckHealth(
 	ctx context.Context,
-	healthCtx *HealthCheckStepContext,
-) HealthCheckStepResult {
+	healthCtx *dirsdk.HealthCheckStepContext,
+) dirsdk.HealthCheckStepResult {
 	cfg, err := ConfigToStruct[ArgoCDHealthConfig](healthCtx.Config)
 	if err != nil {
-		return HealthCheckStepResult{
+		return dirsdk.HealthCheckStepResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				fmt.Sprintf(
@@ -71,16 +72,16 @@ func (a *argocdUpdater) RunHealthCheckStep(
 			},
 		}
 	}
-	return a.runHealthCheckStep(ctx, healthCtx, cfg)
+	return a.checkHealth(ctx, cfg)
 }
 
-func (a *argocdUpdater) runHealthCheckStep(
+func (a *argocdUpdater) checkHealth(
 	ctx context.Context,
-	healthCtx *HealthCheckStepContext,
 	healthCfg ArgoCDHealthConfig,
-) HealthCheckStepResult {
-	if healthCtx.ArgoCDClient == nil {
-		return HealthCheckStepResult{
+) dirsdk.HealthCheckStepResult {
+	argoCDClient := argoCDClientFromContext(ctx)
+	if argoCDClient == nil {
+		return dirsdk.HealthCheckStepResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
 				"Argo CD integration is disabled on this controller; cannot assess " +
@@ -88,7 +89,7 @@ func (a *argocdUpdater) runHealthCheckStep(
 			},
 		}
 	}
-	health := HealthCheckStepResult{
+	health := dirsdk.HealthCheckStepResult{
 		Status: kargoapi.HealthStateHealthy,
 		Issues: make([]string, 0),
 	}
@@ -104,14 +105,14 @@ func (a *argocdUpdater) runHealthCheckStep(
 		}
 		var state kargoapi.HealthState
 		var err error
-		state, appStatuses[i], err = a.getApplicationHealth(
+		state, appStatuses[i], err = a.getApplicationHealth( // nolint:forcetypeassert
 			ctx,
-			healthCtx,
 			client.ObjectKey{
 				Namespace: namespace,
 				Name:      appHealthCheck.Name,
 			},
 			appHealthCheck.DesiredRevisions,
+			argoCDClient,
 		)
 		health.Status = health.Status.Merge(state)
 		if err != nil {
@@ -144,9 +145,9 @@ var healthErrorConditions = []argocd.ApplicationConditionType{
 // returns an error with a message explaining why.
 func (a *argocdUpdater) getApplicationHealth(
 	ctx context.Context,
-	healthCtx *HealthCheckStepContext,
 	appKey client.ObjectKey,
 	desiredRevisions []string,
+	c client.Client,
 ) (kargoapi.HealthState, ArgoCDAppStatus, error) {
 	appStatus := ArgoCDAppStatus{
 		Namespace: appKey.Namespace,
@@ -161,7 +162,7 @@ func (a *argocdUpdater) getApplicationHealth(
 		},
 	}
 	app := &argocd.Application{}
-	if err := healthCtx.ArgoCDClient.Get(ctx, appKey, app); err != nil {
+	if err := c.Get(ctx, appKey, app); err != nil {
 		if kubeerr.IsNotFound(err) {
 			err = fmt.Errorf(
 				"unable to find Argo CD Application %q in namespace %q",
@@ -218,7 +219,7 @@ func (a *argocdUpdater) getApplicationHealth(
 			if duration := time.Until(cooldown); duration > 0 {
 				time.Sleep(duration)
 				// Re-fetch the application to get the latest state.
-				if err := healthCtx.ArgoCDClient.Get(ctx, appKey, app); err != nil {
+				if err := c.Get(ctx, appKey, app); err != nil {
 					if kubeerr.IsNotFound(err) {
 						err = fmt.Errorf(
 							"unable to find Argo CD Application %q in namespace %q",

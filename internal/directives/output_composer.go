@@ -8,16 +8,18 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(newOutputComposer(), nil)
+	Register(newOutputComposer())
 }
 
-// outputComposer is an implementation of the PromotionStepRunner interface
-// that allows composing outputs from previous steps into new outputs.
+// outputComposer is an implementation of the Promoter interface that allows
+// composing outputs from previous steps into new outputs.
 //
-// It works based on the PromotionStepContext.Config field allowing to an
+// It works based on the dirsdk.PromotionStepContext.Config field allowing to an
 // arbitrary number of key-value pairs to be exported as outputs.
 // Because the values are allowed to be expressions and can contain
 // references to outputs from previous steps, this allows for remapping
@@ -39,43 +41,42 @@ type outputComposer struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newOutputComposer returns an implementation of the PromotionStepRunner
-// interface that composes output from previous steps into new output.
-func newOutputComposer() PromotionStepRunner {
+// newOutputComposer returns an initialized outputComposer.
+func newOutputComposer() *outputComposer {
 	r := &outputComposer{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the Namer interface.
 func (c *outputComposer) Name() string {
 	return "compose-output"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
-func (c *outputComposer) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (c *outputComposer) Promote(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
 	// Validate the configuration against the JSON Schema.
 	if err := validate(c.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), c.Name()); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Convert the configuration into a typed object.
-	cfg, err := ConfigToStruct[ComposeOutput](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.ComposeOutput](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", c.Name(), err)
 	}
 
-	return c.runPromotionStep(cfg)
+	return c.compose(cfg)
 }
 
-func (c *outputComposer) runPromotionStep(
-	cfg ComposeOutput,
-) (PromotionStepResult, error) {
-	return PromotionStepResult{
+func (c *outputComposer) compose(
+	cfg builtins.ComposeOutput,
+) (*dirsdk.PromotionStepResult, error) {
+	return &dirsdk.PromotionStepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: maps.Clone(cfg),
 	}, nil

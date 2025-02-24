@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	"github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_yamlParser_validate(t *testing.T) {
@@ -123,22 +125,22 @@ func Test_yamlParser_validate(t *testing.T) {
 	}
 }
 
-func Test_yamlParser_runPromotionStep(t *testing.T) {
+func Test_yamlParser_promote(t *testing.T) {
 	tests := []struct {
 		name       string
-		stepCtx    *PromotionStepContext
-		cfg        YAMLParseConfig
+		stepCtx    *dirsdk.PromotionStepContext
+		cfg        builtins.YAMLParseConfig
 		files      map[string]string
-		assertions func(*testing.T, string, PromotionStepResult, error)
+		assertions func(*testing.T, string, *dirsdk.PromotionStepResult, error)
 	}{
 		{
 			name: "successful run with outputs",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &dirsdk.PromotionStepContext{
 				Project: "test-project",
 			},
-			cfg: YAMLParseConfig{
+			cfg: builtins.YAMLParseConfig{
 				Path: "config.yaml",
-				Outputs: []YAMLParse{
+				Outputs: []builtins.YAMLParse{
 					{Name: "appVersion", FromExpression: "app.version"},
 					{Name: "featureStatus", FromExpression: "features.newFeature"},
 				},
@@ -151,9 +153,9 @@ features:
   newFeature: false
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result *dirsdk.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, &dirsdk.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"appVersion":    "1.0.0",
@@ -165,12 +167,12 @@ features:
 		},
 		{
 			name: "failed to extract outputs",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &dirsdk.PromotionStepContext{
 				Project: "test-project",
 			},
-			cfg: YAMLParseConfig{
+			cfg: builtins.YAMLParseConfig{
 				Path: "config.yaml",
-				Outputs: []YAMLParse{
+				Outputs: []builtins.YAMLParse{
 					{Name: "invalidField", FromExpression: "nonexistent.path"},
 				},
 			},
@@ -180,20 +182,20 @@ app:
   version: "1.0.0"
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result *dirsdk.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "failed to extract outputs")
 			},
 		},
 		{
 			name: "no outputs provided",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &dirsdk.PromotionStepContext{
 				Project: "test-project",
 			},
-			cfg: YAMLParseConfig{
+			cfg: builtins.YAMLParseConfig{
 				Path:    "config.yaml",
-				Outputs: []YAMLParse{},
+				Outputs: []builtins.YAMLParse{},
 			},
 			files: map[string]string{
 				"config.yaml": `
@@ -201,9 +203,9 @@ app:
   version: "1.0.0"
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result *dirsdk.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, &dirsdk.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseErrored,
 				}, result)
 				assert.Contains(t, err.Error(), "outputs is required")
@@ -211,54 +213,66 @@ app:
 		},
 		{
 			name: "handle empty YAML file",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &dirsdk.PromotionStepContext{
 				Project: "test-project",
 			},
-			cfg: YAMLParseConfig{
+			cfg: builtins.YAMLParseConfig{
 				Path: "config.yaml",
-				Outputs: []YAMLParse{
+				Outputs: []builtins.YAMLParse{
 					{Name: "key", FromExpression: "app.key"},
 				},
 			},
 			files: map[string]string{
 				"config.yaml": ``,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result *dirsdk.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "could not parse empty YAML file")
 			},
 		},
 		{
 			name:    "path is empty",
-			stepCtx: &PromotionStepContext{Project: "test-project"},
-			cfg:     YAMLParseConfig{Path: "", Outputs: []YAMLParse{{Name: "key", FromExpression: "app.key"}}},
-			files:   map[string]string{},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			stepCtx: &dirsdk.PromotionStepContext{Project: "test-project"},
+			cfg: builtins.YAMLParseConfig{
+				Path: "",
+				Outputs: []builtins.YAMLParse{{
+					Name:           "key",
+					FromExpression: "app.key"},
+				},
+			},
+			files: map[string]string{},
+			assertions: func(t *testing.T, _ string, result *dirsdk.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "YAML file path cannot be empty")
 			},
 		},
 		{
 			name:    "path is a directory instead of a file",
-			stepCtx: &PromotionStepContext{Project: "test-project"},
-			cfg:     YAMLParseConfig{Path: "config", Outputs: []YAMLParse{{Name: "key", FromExpression: "app.key"}}},
-			files:   map[string]string{},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			stepCtx: &dirsdk.PromotionStepContext{Project: "test-project"},
+			cfg: builtins.YAMLParseConfig{
+				Path: "config",
+				Outputs: []builtins.YAMLParse{{
+					Name:           "key",
+					FromExpression: "app.key",
+				}},
+			},
+			files: map[string]string{},
+			assertions: func(t *testing.T, _ string, result *dirsdk.PromotionStepResult, err error) {
 				assert.Error(t, err)
-				assert.Equal(t, PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
+				assert.Equal(t, &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, result)
 				assert.Contains(t, err.Error(), "no such file or directory")
 			},
 		},
 		{
 			name: "valid YAML, valid expressions, valid path",
-			stepCtx: &PromotionStepContext{
+			stepCtx: &dirsdk.PromotionStepContext{
 				Project: "test-project",
 			},
-			cfg: YAMLParseConfig{
+			cfg: builtins.YAMLParseConfig{
 				Path: "config.yaml",
-				Outputs: []YAMLParse{
+				Outputs: []builtins.YAMLParse{
 					{Name: "appVersion", FromExpression: "app.version"},
 					{Name: "isEnabled", FromExpression: "features.enabled"},
 					{Name: "threshold", FromExpression: "config.threshold"},
@@ -274,9 +288,9 @@ config:
   threshold: 10.0
 `,
 			},
-			assertions: func(t *testing.T, _ string, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, _ string, result *dirsdk.PromotionStepResult, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, PromotionStepResult{
+				assert.Equal(t, &dirsdk.PromotionStepResult{
 					Status: kargoapi.PromotionPhaseSucceeded,
 					Output: map[string]any{
 						"appVersion": "2.0.1",
@@ -300,7 +314,7 @@ config:
 				require.NoError(t, os.WriteFile(path.Join(stepCtx.WorkDir, p), []byte(c), 0o600))
 			}
 
-			result, err := runner.runPromotionStep(context.Background(), stepCtx, tt.cfg)
+			result, err := runner.promote(context.Background(), stepCtx, tt.cfg)
 			tt.assertions(t, stepCtx.WorkDir, result, err)
 		})
 	}
@@ -354,14 +368,14 @@ func Test_yamlParser_extractValues(t *testing.T) {
 	tests := []struct {
 		name           string
 		data           map[string]any
-		outputs        []YAMLParse
+		outputs        []builtins.YAMLParse
 		expected       map[string]any
 		expectedErrMsg string
 	}{
 		{
 			name: "valid yaml, valid expression",
 			data: map[string]any{"key": "value"},
-			outputs: []YAMLParse{
+			outputs: []builtins.YAMLParse{
 				{Name: "result", FromExpression: "key"},
 			},
 			expected: map[string]any{"result": "value"},
@@ -369,7 +383,7 @@ func Test_yamlParser_extractValues(t *testing.T) {
 		{
 			name: "valid yaml, expression points to missing key",
 			data: map[string]any{"key": "value"},
-			outputs: []YAMLParse{
+			outputs: []builtins.YAMLParse{
 				{Name: "result", FromExpression: "missingKey"},
 			},
 			expectedErrMsg: "error compiling expression",
@@ -377,7 +391,7 @@ func Test_yamlParser_extractValues(t *testing.T) {
 		{
 			name: "expression evaluates to a nested object",
 			data: map[string]any{"nested": map[string]any{"key": "value"}},
-			outputs: []YAMLParse{
+			outputs: []builtins.YAMLParse{
 				{Name: "result", FromExpression: "nested"},
 			},
 			expected: map[string]any{"result": map[string]any{"key": "value"}},
@@ -385,7 +399,7 @@ func Test_yamlParser_extractValues(t *testing.T) {
 		{
 			name: "expression evaluates to an array",
 			data: map[string]any{"array": []any{1, 2, 3}},
-			outputs: []YAMLParse{
+			outputs: []builtins.YAMLParse{
 				{Name: "result", FromExpression: "array"},
 			},
 			expected: map[string]any{"result": []any{1, 2, 3}},
@@ -393,7 +407,7 @@ func Test_yamlParser_extractValues(t *testing.T) {
 		{
 			name: "expression evaluates to a string",
 			data: map[string]any{"key": "value"},
-			outputs: []YAMLParse{
+			outputs: []builtins.YAMLParse{
 				{Name: "result", FromExpression: "key"},
 			},
 			expected: map[string]any{"result": "value"},
@@ -401,7 +415,7 @@ func Test_yamlParser_extractValues(t *testing.T) {
 		{
 			name: "expression evaluates to an integer",
 			data: map[string]any{"number": 42},
-			outputs: []YAMLParse{
+			outputs: []builtins.YAMLParse{
 				{Name: "result", FromExpression: "number"},
 			},
 			expected: map[string]any{"result": 42},
@@ -409,7 +423,7 @@ func Test_yamlParser_extractValues(t *testing.T) {
 		{
 			name: "expression compilation error",
 			data: map[string]any{"key": "value"},
-			outputs: []YAMLParse{
+			outputs: []builtins.YAMLParse{
 				{Name: "result", FromExpression: "(1 + 2"},
 			},
 			expectedErrMsg: "error compiling expression",

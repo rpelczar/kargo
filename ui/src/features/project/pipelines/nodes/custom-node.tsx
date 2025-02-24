@@ -1,7 +1,7 @@
 import { Handle, Position } from '@xyflow/react';
 import { PropsWithChildren } from 'react';
 
-import { RepoSubscription, Stage, Warehouse } from '@ui/gen/v1alpha1/generated_pb';
+import { RepoSubscription, Stage, Warehouse } from '@ui/gen/api/v1alpha1/generated_pb';
 
 import styles from './custom-node.module.less';
 import { StageNode } from './stage-node';

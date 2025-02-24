@@ -11,65 +11,66 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(newJSONUpdater(), nil)
+	Register(newJSONUpdater())
 }
 
-// jsonUpdater is an implementation of the PromotionStepRunner interface that
-// updates the values of specified keys in a JSON file.
+// jsonUpdater is an implementation of the Promoter interface that updates the
+// values of specified keys in a JSON file.
 type jsonUpdater struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newJSONUpdater returns an implementation of the PromotionStepRunner interface
-// that updates the values of specified keys in a JSON file.
-func newJSONUpdater() PromotionStepRunner {
+// newJSONUpdater returns an initialized jsonUpdater.
+func newJSONUpdater() *jsonUpdater {
 	r := &jsonUpdater{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the Namer interface.
 func (j *jsonUpdater) Name() string {
 	return "json-update"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
-func (j *jsonUpdater) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (j *jsonUpdater) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
+	failure := &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := j.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
-	cfg, err := ConfigToStruct[JSONUpdateConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.JSONUpdateConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", j.Name(), err)
 	}
 
-	return j.runPromotionStep(ctx, stepCtx, cfg)
+	return j.update(ctx, stepCtx, cfg)
 }
 
 // validate validates jsonUpdater configuration against a JSON schema.
-func (j *jsonUpdater) validate(cfg Config) error {
+func (j *jsonUpdater) validate(cfg dirsdk.Config) error {
 	return validate(j.schemaLoader, gojsonschema.NewGoLoader(cfg), j.Name())
 }
 
-func (j *jsonUpdater) runPromotionStep(
+func (j *jsonUpdater) update(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
-	cfg JSONUpdateConfig,
-) (PromotionStepResult, error) {
-	result := PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
+	stepCtx *dirsdk.PromotionStepContext,
+	cfg builtins.JSONUpdateConfig,
+) (*dirsdk.PromotionStepResult, error) {
+	result := &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}
 
 	if len(cfg.Updates) > 0 {
 		if err := j.updateFile(stepCtx.WorkDir, cfg.Path, cfg.Updates); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("JSON file update failed: %w", err)
 		}
 
@@ -82,7 +83,7 @@ func (j *jsonUpdater) runPromotionStep(
 	return result, nil
 }
 
-func (j *jsonUpdater) updateFile(workDir string, path string, updates []JSONUpdate) error {
+func (j *jsonUpdater) updateFile(workDir string, path string, updates []builtins.JSONUpdate) error {
 	absFilePath, err := securejoin.SecureJoin(workDir, path)
 	if err != nil {
 		return fmt.Errorf("error joining path %q: %w", path, err)
@@ -124,7 +125,7 @@ func isValidScalar(value any) bool {
 	}
 }
 
-func (j *jsonUpdater) generateCommitMessage(path string, updates []JSONUpdate) string {
+func (j *jsonUpdater) generateCommitMessage(path string, updates []builtins.JSONUpdate) string {
 	if len(updates) == 0 {
 		return ""
 	}

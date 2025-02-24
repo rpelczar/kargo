@@ -12,19 +12,15 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(
-		newGitCloner(),
-		&StepRunnerPermissions{
-			AllowCredentialsDB: true,
-			AllowKargoClient:   true,
-		},
-	)
+	Register(newGitCloner())
 }
 
-// gitCloner is an implementation of the PromotionStepRunner interface that
+// gitCloner is an implementation of the Promoter interface that
 // clones one or more refs from a remote Git repository to one or more working
 // directories.
 type gitCloner struct {
@@ -49,10 +45,8 @@ func gitUserFromEnv() git.User {
 	}
 }
 
-// newGitCloner returns an implementation of the PromotionStepRunner interface
-// that clones one or more refs from a remote Git repository to one or more
-// working directories.
-func newGitCloner() PromotionStepRunner {
+// newGitCloner returns an initialized gitCloner.
+func newGitCloner() *gitCloner {
 	r := &gitCloner{
 		gitUser: gitUserFromEnv(),
 	}
@@ -60,58 +54,59 @@ func newGitCloner() PromotionStepRunner {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the Namer interface.
 func (g *gitCloner) Name() string {
 	return "git-clone"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
-func (g *gitCloner) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (g *gitCloner) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
 	if err := g.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
-	cfg, err := ConfigToStruct[GitCloneConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.GitCloneConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", g.Name(), err)
 	}
-	return g.runPromotionStep(ctx, stepCtx, cfg)
+	return g.clone(ctx, stepCtx, cfg)
 }
 
 // validate validates gitCloner configuration against a JSON schema.
-func (g *gitCloner) validate(cfg Config) error {
+func (g *gitCloner) validate(cfg dirsdk.Config) error {
 	return validate(g.schemaLoader, gojsonschema.NewGoLoader(cfg), g.Name())
 }
 
-func (g *gitCloner) runPromotionStep(
+func (g *gitCloner) clone(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-	cfg GitCloneConfig,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+	cfg builtins.GitCloneConfig,
+) (*dirsdk.PromotionStepResult, error) {
 	mustClone, err := mustCloneRepo(stepCtx, cfg)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"error determining if repo %s must be cloned: %w", cfg.RepoURL, err,
 		)
 	}
 	if !mustClone {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 	}
 
-	var repoCreds *git.RepoCredentials
-	creds, found, err := stepCtx.CredentialsDB.Get(
+	credsDB := credentialsDBFromContext(ctx)
+	creds, found, err := credsDB.Get(
 		ctx,
 		stepCtx.Project,
 		credentials.TypeGit,
 		cfg.RepoURL,
 	)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error getting credentials for %s: %w", cfg.RepoURL, err)
 	}
+	var repoCreds *git.RepoCredentials
 	if found {
 		repoCreds = &git.RepoCredentials{
 			Username:      creds.Username,
@@ -131,7 +126,7 @@ func (g *gitCloner) runPromotionStep(
 		},
 	)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error cloning %s: %w", cfg.RepoURL, err)
 	}
 	for _, checkout := range cfg.Checkout {
@@ -140,7 +135,7 @@ func (g *gitCloner) runPromotionStep(
 		case checkout.Branch != "":
 			ref = checkout.Branch
 			if err = ensureRemoteBranch(repo, ref, checkout.Create); err != nil {
-				return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+				return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 					fmt.Errorf("error ensuring existence of remote branch %s: %w", ref, err)
 			}
 		case checkout.Commit != "":
@@ -150,7 +145,7 @@ func (g *gitCloner) runPromotionStep(
 		}
 		path, err := securejoin.SecureJoin(stepCtx.WorkDir, checkout.Path)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error joining path %s with work dir %s: %w",
 				checkout.Path, stepCtx.WorkDir, err,
 			)
@@ -159,7 +154,7 @@ func (g *gitCloner) runPromotionStep(
 			path,
 			&git.AddWorkTreeOptions{Ref: ref},
 		); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error adding work tree %s to repo %s: %w",
 				checkout.Path, cfg.RepoURL, err,
 			)
@@ -168,15 +163,15 @@ func (g *gitCloner) runPromotionStep(
 	// Note: We do NOT defer repo.Close() because we want to keep the repository
 	// around on the FS for subsequent promotion steps to use. The Engine will
 	// handle all work dir cleanup.
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 // mustCloneRepo determines if the repository must be cloned. At present, there
-// is no concept of partial success or retries for PromotionStepRunners, so if
-// any one working tree's path already exists, we can assume a previous attempt
-// to clone the repository was fully successful. If that were not the case, this
-// PromotionStepRunner would not even be executed again.
-func mustCloneRepo(stepCtx *PromotionStepContext, cfg GitCloneConfig) (bool, error) {
+// is no concept of partial success or retries for Promoters, so if any one
+// working tree's path already exists, we can assume a previous attempt to clone
+// the repository was fully successful. If that were not the case, this Promoter
+// would not even be executed again.
+func mustCloneRepo(stepCtx *dirsdk.PromotionStepContext, cfg builtins.GitCloneConfig) (bool, error) {
 	if len(cfg.Checkout) == 0 {
 		// This shouldn't actually happen because the schema enforces this being
 		// non-empty.

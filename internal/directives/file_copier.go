@@ -17,14 +17,16 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/logging"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(newFileCopier(), nil)
+	Register(newFileCopier())
 }
 
-// fileCopier is an implementation of the PromotionStepRunner interface that
-// copies a file or directory.
+// fileCopier is an implementation of the Promoter interface that copies a file
+// or directory.
 //
 // The copy is recursive, merging directories if the destination directory
 // already exists. If the destination is an existing file, it will be
@@ -33,60 +35,59 @@ type fileCopier struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newFileCopier returns an implementation of the PromotionStepRunner interface
-// that copies a file or directory.
-func newFileCopier() PromotionStepRunner {
+// newFileCopier returns an initialized fileCopier.
+func newFileCopier() *fileCopier {
 	r := &fileCopier{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the Namer interface.
 func (f *fileCopier) Name() string {
 	return "copy"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
-func (f *fileCopier) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (f *fileCopier) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
 	// Validate the configuration against the JSON Schema.
 	if err := validate(f.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), f.Name()); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Convert the configuration into a typed object.
-	cfg, err := ConfigToStruct[CopyConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.CopyConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", f.Name(), err)
 	}
 
-	return f.runPromotionStep(ctx, stepCtx, cfg)
+	return f.copy(ctx, stepCtx, cfg)
 }
 
-func (f *fileCopier) runPromotionStep(
+func (f *fileCopier) copy(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-	cfg CopyConfig,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+	cfg builtins.CopyConfig,
+) (*dirsdk.PromotionStepResult, error) {
 	// Secure join the paths to prevent path traversal attacks.
 	inPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.InPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not secure join inPath %q: %w", cfg.InPath, err)
 	}
 	outPath, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.OutPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not secure join outPath %q: %w", cfg.OutPath, err)
 	}
 
 	// Load the ignore rules.
 	matcher, err := f.loadIgnoreRules(inPath, cfg.Ignore)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to load ignore rules: %w", err)
 	}
 
@@ -104,10 +105,10 @@ func (f *fileCopier) runPromotionStep(
 		},
 	}
 	if err = copy.Copy(inPath, outPath, opts); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("failed to copy %q to %q: %w", cfg.InPath, cfg.OutPath, err)
 	}
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 // loadIgnoreRules loads the ignore rules from the given string. The rules are

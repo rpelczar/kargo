@@ -13,24 +13,26 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_gitTreeOverwriter_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           dirsdk.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -39,13 +41,11 @@ func Test_gitTreeOverwriter_validate(t *testing.T) {
 		},
 	}
 
-	r := newGitTreeClearer()
-	runner, ok := r.(*gitTreeClearer)
-	require.True(t, ok)
+	clearer := newGitTreeClearer()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := runner.validate(testCase.config)
+			err := clearer.validate(testCase.config)
 			if len(testCase.expectedProblems) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -57,7 +57,7 @@ func Test_gitTreeOverwriter_validate(t *testing.T) {
 	}
 }
 
-func Test_gitTreeOverwriter_runPromotionStep(t *testing.T) {
+func Test_gitTreeOverwriter_clear(t *testing.T) {
 	// Set up a test Git server in-process
 	service := gitkit.New(
 		gitkit.Config{
@@ -102,18 +102,16 @@ func Test_gitTreeOverwriter_runPromotionStep(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run the directive
-	r := newGitTreeClearer()
-	runner, ok := r.(*gitTreeClearer)
-	require.True(t, ok)
+	clearer := newGitTreeClearer()
 
-	res, err := runner.runPromotionStep(
+	res, err := clearer.clear(
 		context.Background(),
-		&PromotionStepContext{
+		&dirsdk.PromotionStepContext{
 			Project: "fake-project",
 			Stage:   "fake-stage",
 			WorkDir: workDir,
 		},
-		GitClearConfig{
+		builtins.GitClearConfig{
 			Path: "master",
 		},
 	)

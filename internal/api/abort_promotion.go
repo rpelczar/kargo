@@ -6,8 +6,8 @@ import (
 	"connectrpc.com/connect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kargoapi "github.com/akuity/kargo/api/v1alpha1"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	"github.com/akuity/kargo/internal/helpers"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 func (s *server) AbortPromotion(
@@ -31,7 +31,7 @@ func (s *server) AbortPromotion(
 		Namespace: project,
 		Name:      name,
 	}
-	if err := kargoapi.AbortPromotion(ctx, s.client, objKey, kargoapi.AbortActionTerminate); err != nil {
+	if err := helpers.AbortPromotion(ctx, s.client, objKey, helpers.AbortActionTerminate); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&svcv1alpha1.AbortPromotionResponse{}), nil

@@ -4,55 +4,57 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 func TestState_Set(t *testing.T) {
 	tests := []struct {
 		name     string
-		setup    func() State
+		setup    func() dirsdk.State
 		key      string
 		value    any
 		expected any
 	}{
 		{
 			name:     "Set string value",
-			setup:    func() State { return make(State) },
+			setup:    func() dirsdk.State { return make(dirsdk.State) },
 			key:      "key1",
 			value:    "value1",
 			expected: "value1",
 		},
 		{
 			name:     "Set integer value",
-			setup:    func() State { return make(State) },
+			setup:    func() dirsdk.State { return make(dirsdk.State) },
 			key:      "key2",
 			value:    42,
 			expected: 42,
 		},
 		{
 			name:     "Set slice value",
-			setup:    func() State { return make(State) },
+			setup:    func() dirsdk.State { return make(dirsdk.State) },
 			key:      "key3",
 			value:    []string{"a", "b", "c"},
 			expected: []string{"a", "b", "c"},
 		},
 		{
 			name:     "Set map value",
-			setup:    func() State { return make(State) },
+			setup:    func() dirsdk.State { return make(dirsdk.State) },
 			key:      "key4",
 			value:    map[string]int{"a": 1, "b": 2},
 			expected: map[string]int{"a": 1, "b": 2},
 		},
 		{
 			name:     "Set nil value",
-			setup:    func() State { return make(State) },
+			setup:    func() dirsdk.State { return make(dirsdk.State) },
 			key:      "key5",
 			value:    nil,
 			expected: nil,
 		},
 		{
 			name: "Overwrite existing value",
-			setup: func() State {
-				s := make(State)
+			setup: func() dirsdk.State {
+				s := make(dirsdk.State)
 				s["key"] = "initial_value"
 				return s
 			},
@@ -74,15 +76,15 @@ func TestState_Set(t *testing.T) {
 func TestState_Get(t *testing.T) {
 	tests := []struct {
 		name     string
-		setup    func() State
+		setup    func() dirsdk.State
 		key      string
 		expected any
 		exists   bool
 	}{
 		{
 			name: "Get existing string value",
-			setup: func() State {
-				s := make(State)
+			setup: func() dirsdk.State {
+				s := make(dirsdk.State)
 				s["key1"] = "value1"
 				return s
 			},
@@ -92,8 +94,8 @@ func TestState_Get(t *testing.T) {
 		},
 		{
 			name: "Get existing integer value",
-			setup: func() State {
-				s := make(State)
+			setup: func() dirsdk.State {
+				s := make(dirsdk.State)
 				s["key2"] = 42
 				return s
 			},
@@ -103,8 +105,8 @@ func TestState_Get(t *testing.T) {
 		},
 		{
 			name: "Get existing slice value",
-			setup: func() State {
-				s := make(State)
+			setup: func() dirsdk.State {
+				s := make(dirsdk.State)
 				s["key3"] = []string{"a", "b", "c"}
 				return s
 			},
@@ -114,8 +116,8 @@ func TestState_Get(t *testing.T) {
 		},
 		{
 			name: "Get existing map value",
-			setup: func() State {
-				s := make(State)
+			setup: func() dirsdk.State {
+				s := make(dirsdk.State)
 				s["key4"] = map[string]int{"a": 1, "b": 2}
 				return s
 			},
@@ -125,8 +127,8 @@ func TestState_Get(t *testing.T) {
 		},
 		{
 			name: "Get existing nil value",
-			setup: func() State {
-				s := make(State)
+			setup: func() dirsdk.State {
+				s := make(dirsdk.State)
 				s["key5"] = nil
 				return s
 			},
@@ -136,8 +138,8 @@ func TestState_Get(t *testing.T) {
 		},
 		{
 			name: "Get non-existent key",
-			setup: func() State {
-				return make(State)
+			setup: func() dirsdk.State {
+				return make(dirsdk.State)
 			},
 			key:      "non_existent",
 			expected: nil,

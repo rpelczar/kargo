@@ -17,6 +17,8 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/logging"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 const (
@@ -25,107 +27,107 @@ const (
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(newHTTPRequester(), nil)
+	Register(newHTTPRequester())
 }
 
-// httpRequester is an implementation of the PromotionStepRunner interface that
-// sends an HTTP request and processes the response.
+// httpRequester is an implementation of the Promoter interface that sends an
+// HTTP request and processes the response.
 type httpRequester struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newHTTPRequester returns an implementation of the PromotionStepRunner
-// interface that sends an HTTP request and processes the response.
-func newHTTPRequester() PromotionStepRunner {
+// newHTTPRequester returns an initialized httpRequester.
+func newHTTPRequester() *httpRequester {
 	r := &httpRequester{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the Namer interface.
 func (h *httpRequester) Name() string {
 	return "http"
 }
 
-func (h *httpRequester) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (h *httpRequester) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
 	if err := h.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
-	cfg, err := ConfigToStruct[HTTPConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.HTTPConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into http config: %w", err)
 	}
-	return h.runPromotionStep(ctx, stepCtx, cfg)
+	return h.request(ctx, stepCtx, cfg)
 }
 
 // validate validates httpRequester configuration against a JSON schema.
-func (h *httpRequester) validate(cfg Config) error {
+func (h *httpRequester) validate(cfg dirsdk.Config) error {
 	return validate(h.schemaLoader, gojsonschema.NewGoLoader(cfg), h.Name())
 }
 
-func (h *httpRequester) runPromotionStep(
+func (h *httpRequester) request(
 	ctx context.Context,
-	_ *PromotionStepContext,
-	cfg HTTPConfig,
-) (PromotionStepResult, error) {
+	_ *dirsdk.PromotionStepContext,
+	cfg builtins.HTTPConfig,
+) (*dirsdk.PromotionStepResult, error) {
 	req, err := h.buildRequest(cfg)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error building HTTP request: %w", err)
 	}
 	client, err := h.getClient(cfg)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error creating HTTP client: %w", err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error sending HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
 	env, err := h.buildExprEnv(ctx, resp)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error building expression context from HTTP response: %w", err)
 	}
 	success, err := h.wasRequestSuccessful(cfg, resp.StatusCode, env)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error evaluating success criteria: %w", err)
 	}
 	failure, err := h.didRequestFail(cfg, resp.StatusCode, env)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("error evaluating failure criteria: %w", err)
 	}
 	switch {
 	case success && !failure:
 		outputs, err := h.buildOutputs(cfg.Outputs, env)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("error extracting outputs from HTTP response: %w", err)
 		}
-		return PromotionStepResult{
+		return &dirsdk.PromotionStepResult{
 			Status: kargoapi.PromotionPhaseSucceeded,
 			Output: outputs,
 		}, nil
 	case failure:
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseFailed},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseFailed},
 			&terminalError{err: fmt.Errorf(
 				"HTTP (%d) response met failure criteria",
 				resp.StatusCode,
 			)}
 	default:
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseRunning}, nil
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseRunning}, nil
 	}
 }
 
-func (h *httpRequester) buildRequest(cfg HTTPConfig) (*http.Request, error) {
+func (h *httpRequester) buildRequest(cfg builtins.HTTPConfig) (*http.Request, error) {
 	method := cfg.Method
 	if method == "" {
 		method = http.MethodGet
@@ -147,7 +149,7 @@ func (h *httpRequester) buildRequest(cfg HTTPConfig) (*http.Request, error) {
 	return req, nil
 }
 
-func (h *httpRequester) getClient(cfg HTTPConfig) (*http.Client, error) {
+func (h *httpRequester) getClient(cfg builtins.HTTPConfig) (*http.Client, error) {
 	httpTransport := cleanhttp.DefaultTransport()
 	if cfg.InsecureSkipTLSVerify {
 		httpTransport.TLSClientConfig = &tls.Config{
@@ -238,7 +240,7 @@ func (h *httpRequester) buildExprEnv(
 }
 
 func (h *httpRequester) wasRequestSuccessful(
-	cfg HTTPConfig,
+	cfg builtins.HTTPConfig,
 	statusCode int,
 	env map[string]any,
 ) (bool, error) {
@@ -270,7 +272,7 @@ func (h *httpRequester) wasRequestSuccessful(
 }
 
 func (h *httpRequester) didRequestFail(
-	cfg HTTPConfig,
+	cfg builtins.HTTPConfig,
 	statusCode int,
 	env map[string]any,
 ) (bool, error) {
@@ -302,7 +304,7 @@ func (h *httpRequester) didRequestFail(
 }
 
 func (h *httpRequester) buildOutputs(
-	outputExprs []HTTPOutput,
+	outputExprs []builtins.HTTPOutput,
 	env map[string]any,
 ) (map[string]any, error) {
 	outputs := make(map[string]any, len(outputExprs))

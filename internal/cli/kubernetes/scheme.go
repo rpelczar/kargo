@@ -4,8 +4,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	rbacapi "github.com/akuity/kargo/api/rbac/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	rbacapi "github.com/akuity/kargo/internal/rbac/v1alpha1"
 )
 
 var scheme = runtime.NewScheme()

@@ -20,6 +20,8 @@ import (
 	"github.com/akuity/kargo/internal/git"
 	"github.com/akuity/kargo/internal/kubeclient"
 	"github.com/akuity/kargo/internal/logging"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 const (
@@ -28,22 +30,11 @@ const (
 )
 
 func init() {
-	runner := newArgocdUpdater()
-	builtins.RegisterPromotionStepRunner(
-		runner,
-		&StepRunnerPermissions{
-			AllowKargoClient:  true,
-			AllowArgoCDClient: true,
-		},
-	)
-	builtins.RegisterHealthCheckStepRunner(
-		runner,
-		&StepRunnerPermissions{AllowArgoCDClient: true},
-	)
+	Register(newArgocdUpdater())
 }
 
-// argocdUpdater is an implementation of the PromotionStepRunner interface that
-// updates one or more Argo CD Application resources.
+// argocdUpdater is an implementation of the Promoter interface that updates one
+// or more Argo CD Application resources.
 type argocdUpdater struct {
 	schemaLoader gojsonschema.JSONLoader
 
@@ -51,55 +42,57 @@ type argocdUpdater struct {
 
 	getAuthorizedApplicationFn func(
 		context.Context,
-		*PromotionStepContext,
+		*dirsdk.PromotionStepContext,
 		client.ObjectKey,
+		client.Client,
 	) (*argocd.Application, error)
 
 	buildDesiredSourcesFn func(
-		update *ArgoCDAppUpdate,
+		update *builtins.ArgoCDAppUpdate,
 		desiredRevisions []string,
 		app *argocd.Application,
 	) (argocd.ApplicationSources, error)
 
 	mustPerformUpdateFn func(
-		*PromotionStepContext,
-		*ArgoCDAppUpdate,
+		*dirsdk.PromotionStepContext,
+		*builtins.ArgoCDAppUpdate,
 		*argocd.Application,
 	) (argocd.OperationPhase, bool, error)
 
 	syncApplicationFn func(
 		ctx context.Context,
-		stepCtx *PromotionStepContext,
+		stepCtx *dirsdk.PromotionStepContext,
 		app *argocd.Application,
 		desiredSources argocd.ApplicationSources,
+		c client.Client,
 	) error
 
 	applyArgoCDSourceUpdateFn func(
-		update *ArgoCDAppSourceUpdate,
+		update *builtins.ArgoCDAppSourceUpdate,
 		desiredRevision string,
 		src argocd.ApplicationSource,
 	) (argocd.ApplicationSource, bool)
 
 	argoCDAppPatchFn func(
 		context.Context,
-		*PromotionStepContext,
 		kubeclient.ObjectWithKind,
 		kubeclient.UnstructuredPatchFn,
+		client.Client,
 	) error
 
 	logAppEventFn func(
 		ctx context.Context,
-		stepCtx *PromotionStepContext,
 		app *argocd.Application,
 		user string,
 		reason string,
 		message string,
+		c client.Client,
 	)
 }
 
-// newArgocdUpdater returns a implementation of the PromotionStepRunner and
-// HealthCheckStepRunner interfaces that updates Argo CD Application resources
-// and monitors their health.
+// newArgocdUpdater returns a implementation of the Promoter and HealthChecker
+// interfaces that updates Argo CD Application resources and monitors their
+// health.
 func newArgocdUpdater() *argocdUpdater {
 	r := &argocdUpdater{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
@@ -113,50 +106,50 @@ func newArgocdUpdater() *argocdUpdater {
 	return r
 }
 
-// Name implements the PromotionStepRunner interface.
+// Name implements the Promoter interface.
 func (a *argocdUpdater) Name() string {
 	return "argocd-update"
 }
 
-// DefaultTimeout implements the RetryableStepRunner interface.
+// DefaultTimeout implements the RetryablePromoter interface.
 func (a *argocdUpdater) DefaultTimeout() *time.Duration {
 	return ptr.To(5 * time.Minute)
 }
 
-// DefaultErrorThreshold implements the RetryableStepRunner interface.
+// DefaultErrorThreshold implements the RetryablePromoter interface.
 func (a *argocdUpdater) DefaultErrorThreshold() uint32 {
 	return 0 // Will fall back to the system default.
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
-func (a *argocdUpdater) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (a *argocdUpdater) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
 	if err := a.validate(stepCtx.Config); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
-	cfg, err := ConfigToStruct[ArgoCDUpdateConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.ArgoCDUpdateConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", a.Name(), err)
 	}
-	return a.runPromotionStep(ctx, stepCtx, cfg)
+	return a.update(ctx, stepCtx, cfg)
 }
 
-// validate validates argocdUpdatePromotionStepRunner configuration against a
-// JSON schema.
-func (a *argocdUpdater) validate(cfg Config) error {
+// validate validates argocdUpdater configuration against a JSON schema.
+func (a *argocdUpdater) validate(cfg dirsdk.Config) error {
 	return validate(a.schemaLoader, gojsonschema.NewGoLoader(cfg), a.Name())
 }
 
-func (a *argocdUpdater) runPromotionStep(
+func (a *argocdUpdater) update(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-	stepCfg ArgoCDUpdateConfig,
-) (PromotionStepResult, error) {
-	if stepCtx.ArgoCDClient == nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, errors.New(
+	stepCtx *dirsdk.PromotionStepContext,
+	stepCfg builtins.ArgoCDUpdateConfig,
+) (*dirsdk.PromotionStepResult, error) {
+	argoCDClient := argoCDClientFromContext(ctx)
+	if argoCDClient == nil {
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, errors.New(
 			"Argo CD integration is disabled on this controller; cannot update " +
 				"Argo CD Application resources",
 		)
@@ -177,9 +170,9 @@ func (a *argocdUpdater) runPromotionStep(
 		if appKey.Namespace == "" {
 			appKey.Namespace = libargocd.Namespace()
 		}
-		app, err := a.getAuthorizedApplicationFn(ctx, stepCtx, appKey)
+		app, err := a.getAuthorizedApplicationFn(ctx, stepCtx, appKey, argoCDClient)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error getting Argo CD Application %q in namespace %q: %w",
 				appKey.Name, appKey.Namespace, err,
 			)
@@ -207,7 +200,7 @@ func (a *argocdUpdater) runPromotionStep(
 				if phase == "" {
 					// If we do not have a phase, we cannot continue processing
 					// this update by waiting.
-					return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+					return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 				}
 				// Log the error as a warning, but continue to the next update.
 				logger.Info(err.Error())
@@ -215,7 +208,7 @@ func (a *argocdUpdater) runPromotionStep(
 			if phase.Failed() {
 				// Record the reason for the failure if available.
 				if app.Status.OperationState != nil {
-					return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+					return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 						"Argo CD Application %q in namespace %q failed with: %s",
 						app.Name,
 						app.Namespace,
@@ -224,7 +217,7 @@ func (a *argocdUpdater) runPromotionStep(
 				}
 				// If the update failed, we can short-circuit. This is
 				// effectively "fail fast" behavior.
-				return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, nil
+				return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, nil
 			}
 			// If we get here, we can continue to the next update.
 			continue
@@ -243,7 +236,7 @@ func (a *argocdUpdater) runPromotionStep(
 			app,
 		)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error building desired sources for Argo CD Application %q in namespace %q: %w",
 				app.Name, app.Namespace, err,
 			)
@@ -255,8 +248,9 @@ func (a *argocdUpdater) runPromotionStep(
 			stepCtx,
 			app,
 			desiredSources,
+			argoCDClient,
 		); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 				"error syncing Argo CD Application %q in namespace %q: %w",
 				app.Name, app.Namespace, err,
 			)
@@ -267,7 +261,7 @@ func (a *argocdUpdater) runPromotionStep(
 
 	aggregatedStatus := a.operationPhaseToPromotionStatus(updateResults...)
 	if aggregatedStatus == "" {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, fmt.Errorf(
 			"could not determine promotion step status from operation phases: %v",
 			updateResults,
 		)
@@ -275,11 +269,11 @@ func (a *argocdUpdater) runPromotionStep(
 
 	logger.Debug("done executing argocd-update promotion step")
 
-	return PromotionStepResult{
+	return &dirsdk.PromotionStepResult{
 		Status: aggregatedStatus,
-		HealthCheckStep: &HealthCheckStep{
+		HealthCheckStep: &dirsdk.HealthCheckStep{
 			Kind: a.Name(),
-			Config: Config{
+			Config: dirsdk.Config{
 				"apps": appHealthChecks,
 			},
 		},
@@ -289,7 +283,7 @@ func (a *argocdUpdater) runPromotionStep(
 // buildDesiredSources returns the desired source(s) for an Argo CD Application,
 // by updating the current source(s) with the given source updates.
 func (a *argocdUpdater) buildDesiredSources(
-	update *ArgoCDAppUpdate,
+	update *builtins.ArgoCDAppUpdate,
 	desiredRevisions []string,
 	app *argocd.Application,
 ) (argocd.ApplicationSources, error) {
@@ -337,8 +331,8 @@ updateLoop:
 }
 
 func (a *argocdUpdater) mustPerformUpdate(
-	stepCtx *PromotionStepContext,
-	update *ArgoCDAppUpdate,
+	stepCtx *dirsdk.PromotionStepContext,
+	update *builtins.ArgoCDAppUpdate,
 	app *argocd.Application,
 ) (phase argocd.OperationPhase, mustUpdate bool, err error) {
 	status := app.Status.OperationState
@@ -432,9 +426,10 @@ func (a *argocdUpdater) mustPerformUpdate(
 
 func (a *argocdUpdater) syncApplication(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *dirsdk.PromotionStepContext,
 	app *argocd.Application,
 	desiredSources argocd.ApplicationSources,
+	c client.Client,
 ) error {
 	// Initiate a "hard" refresh.
 	if app.ObjectMeta.Annotations == nil {
@@ -498,7 +493,7 @@ func (a *argocdUpdater) syncApplication(
 	app.Status.OperationState = nil
 
 	// Patch the Argo CD Application.
-	if err := a.argoCDAppPatchFn(ctx, stepCtx, app, func(src, dst unstructured.Unstructured) error {
+	if err := a.argoCDAppPatchFn(ctx, app, func(src, dst unstructured.Unstructured) error {
 		dst.SetAnnotations(src.GetAnnotations())
 		dst.Object["spec"] = a.recursiveMerge(src.Object["spec"], dst.Object["spec"])
 		dst.Object["operation"] = src.Object["operation"]
@@ -515,7 +510,7 @@ func (a *argocdUpdater) syncApplication(
 		dst.Object["status"].(map[string]any)["operationState"] =
 			src.Object["status"].(map[string]any)["operationState"]
 		return nil
-	}); err != nil {
+	}, c); err != nil {
 		return fmt.Errorf("error patching Argo CD Application %q: %w", app.Name, err)
 	}
 	logging.LoggerFromContext(ctx).Debug("patched Argo CD Application", "app", app.Name)
@@ -536,31 +531,31 @@ func (a *argocdUpdater) syncApplication(
 	}
 	a.logAppEventFn(
 		ctx,
-		stepCtx,
 		app,
 		applicationOperationInitiator,
 		argocd.EventReasonOperationStarted,
 		message,
+		c,
 	)
 	return nil
 }
 
 func (a *argocdUpdater) argoCDAppPatch(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
 	app kubeclient.ObjectWithKind,
 	modify kubeclient.UnstructuredPatchFn,
+	c client.Client,
 ) error {
-	return kubeclient.PatchUnstructured(ctx, stepCtx.ArgoCDClient, app, modify)
+	return kubeclient.PatchUnstructured(ctx, c, app, modify)
 }
 
 func (a *argocdUpdater) logAppEvent(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
 	app *argocd.Application,
 	user string,
 	reason string,
 	message string,
+	c client.Client,
 ) {
 	logger := logging.LoggerFromContext(ctx).WithValues("app", app.Name)
 
@@ -601,7 +596,7 @@ func (a *argocdUpdater) logAppEvent(
 		Type:    corev1.EventTypeNormal,
 		Reason:  reason,
 	}
-	if err := stepCtx.ArgoCDClient.Create(context.Background(), &event); err != nil {
+	if err := c.Create(context.Background(), &event); err != nil {
 		logger.Error(
 			err, "unable to create event for Argo CD Application",
 			"reason", reason,
@@ -614,12 +609,13 @@ func (a *argocdUpdater) logAppEvent(
 // represented by stageMeta.
 func (a *argocdUpdater) getAuthorizedApplication(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
+	stepCtx *dirsdk.PromotionStepContext,
 	appKey client.ObjectKey,
+	c client.Client,
 ) (*argocd.Application, error) {
 	app, err := argocd.GetApplication(
 		ctx,
-		stepCtx.ArgoCDClient,
+		c,
 		appKey.Namespace,
 		appKey.Name,
 	)
@@ -647,7 +643,7 @@ func (a *argocdUpdater) getAuthorizedApplication(
 // represented by appMeta does not explicitly permit mutation by the Kargo Stage
 // represented by stageMeta.
 func (a *argocdUpdater) authorizeArgoCDAppUpdate(
-	stepCtx *PromotionStepContext,
+	stepCtx *dirsdk.PromotionStepContext,
 	appMeta metav1.ObjectMeta,
 ) error {
 	permErr := fmt.Errorf(
@@ -693,7 +689,7 @@ func (a *argocdUpdater) authorizeArgoCDAppUpdate(
 
 // applyArgoCDSourceUpdate updates a single Argo CD ApplicationSource.
 func (a *argocdUpdater) applyArgoCDSourceUpdate(
-	update *ArgoCDAppSourceUpdate,
+	update *builtins.ArgoCDAppSourceUpdate,
 	desiredRevision string,
 	source argocd.ApplicationSource,
 ) (argocd.ApplicationSource, bool) {
@@ -756,7 +752,9 @@ func (a *argocdUpdater) applyArgoCDSourceUpdate(
 	return source, true
 }
 
-func (a *argocdUpdater) buildKustomizeImagesForAppSource(update *ArgoCDKustomizeImageUpdates) argocd.KustomizeImages {
+func (a *argocdUpdater) buildKustomizeImagesForAppSource(
+	update *builtins.ArgoCDKustomizeImageUpdates,
+) argocd.KustomizeImages {
 	kustomizeImages := make(argocd.KustomizeImages, 0, len(update.Images))
 	for i := range update.Images {
 		imageUpdate := &update.Images[i]
@@ -784,7 +782,9 @@ func (a *argocdUpdater) buildKustomizeImagesForAppSource(update *ArgoCDKustomize
 	return kustomizeImages
 }
 
-func (a *argocdUpdater) buildHelmParamChangesForAppSource(update *ArgoCDHelmParameterUpdates) map[string]string {
+func (a *argocdUpdater) buildHelmParamChangesForAppSource(
+	update *builtins.ArgoCDHelmParameterUpdates,
+) map[string]string {
 	changes := map[string]string{}
 	for i := range update.Images {
 		imageUpdate := &update.Images[i]

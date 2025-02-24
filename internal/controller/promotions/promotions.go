@@ -26,12 +26,14 @@ import (
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
 	"github.com/akuity/kargo/internal/directives"
 	"github.com/akuity/kargo/internal/event"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/indexer"
 	"github.com/akuity/kargo/internal/kargo"
 	"github.com/akuity/kargo/internal/kubeclient"
 	libEvent "github.com/akuity/kargo/internal/kubernetes/event"
 	"github.com/akuity/kargo/internal/logging"
 	intpredicate "github.com/akuity/kargo/internal/predicate"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 // ReconcilerConfig represents configuration for the promotion reconciler.
@@ -81,7 +83,7 @@ type reconciler struct {
 
 	terminatePromotionFn func(
 		context.Context,
-		*kargoapi.AbortPromotionRequest,
+		*helpers.AbortPromotionRequest,
 		*kargoapi.Promotion,
 		*kargoapi.Freight,
 	) error
@@ -179,7 +181,7 @@ func newReconciler(
 		recorder:         recorder,
 		cfg:              cfg,
 	}
-	r.getStageFn = kargoapi.GetStage
+	r.getStageFn = helpers.GetStage
 	r.promoteFn = r.promote
 	r.terminatePromotionFn = r.terminatePromotion
 	return r
@@ -199,7 +201,7 @@ func (r *reconciler) Reconcile(
 	logger.Debug("reconciling Promotion")
 
 	// Find the Promotion
-	promo, err := kargoapi.GetPromotion(ctx, r.kargoClient, req.NamespacedName)
+	promo, err := helpers.GetPromotion(ctx, r.kargoClient, req.NamespacedName)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -209,7 +211,7 @@ func (r *reconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 	// Find the Freight
-	freight, err := kargoapi.GetFreight(ctx, r.kargoClient, types.NamespacedName{
+	freight, err := helpers.GetFreight(ctx, r.kargoClient, types.NamespacedName{
 		Namespace: promo.Namespace,
 		Name:      promo.Spec.Freight,
 	})
@@ -230,9 +232,9 @@ func (r *reconciler) Reconcile(
 	)
 
 	// Terminate the Promotion if requested by the user.
-	if req, ok := kargoapi.AbortPromotionAnnotationValue(
+	if req, ok := helpers.AbortPromotionAnnotationValue(
 		promo.GetAnnotations(),
-	); ok && req.Action == kargoapi.AbortActionTerminate {
+	); ok && req.Action == helpers.AbortActionTerminate {
 		if err = r.terminatePromotionFn(ctx, req, promo, freight); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -335,7 +337,7 @@ func (r *reconciler) Reconcile(
 	}
 
 	// Record the current refresh token as having been handled.
-	if token, ok := kargoapi.RefreshAnnotationValue(promo.GetAnnotations()); ok {
+	if token, ok := helpers.RefreshAnnotationValue(promo.GetAnnotations()); ok {
 		newStatus.LastHandledRefresh = token
 	}
 
@@ -435,7 +437,7 @@ func (r *reconciler) promote(
 		return nil, fmt.Errorf("Freight %q not found in namespace %q", promo.Spec.Freight, promo.Namespace)
 	}
 
-	if !stage.IsFreightAvailable(targetFreight) {
+	if !helpers.IsFreightAvailable(stage, targetFreight) {
 		return nil, fmt.Errorf(
 			"Freight %q is not available to Stage %q in namespace %q",
 			promo.Spec.Freight,
@@ -487,7 +489,7 @@ func (r *reconciler) promote(
 		Freight:               *workingPromo.Status.FreightCollection.DeepCopy(),
 		StartFromStep:         promo.Status.CurrentStep,
 		StepExecutionMetadata: promo.Status.StepExecutionMetadata,
-		State:                 directives.State(workingPromo.Status.GetState()),
+		State:                 dirsdk.State(workingPromo.Status.GetState()),
 		Vars:                  workingPromo.Spec.Vars,
 	}
 	if err := os.Mkdir(promoCtx.WorkDir, 0o700); err == nil {
@@ -538,7 +540,7 @@ func (r *reconciler) promote(
 		if current != nil && current.VerificationHistory.Current() != nil {
 			for _, f := range current.Freight {
 				if f.Name == targetFreight.Name {
-					if err := kargoapi.ReverifyStageFreight(
+					if err := helpers.ReverifyStageFreight(
 						ctx,
 						r.kargoClient,
 						types.NamespacedName{
@@ -594,7 +596,7 @@ func (r *reconciler) buildTargetFreightCollection(
 // already in a terminal phase.
 func (r *reconciler) terminatePromotion(
 	ctx context.Context,
-	req *kargoapi.AbortPromotionRequest,
+	req *helpers.AbortPromotionRequest,
 	promo *kargoapi.Promotion,
 	freight *kargoapi.Freight,
 ) error {

@@ -11,14 +11,14 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 
-	rbacapi "github.com/akuity/kargo/api/rbac/v1alpha1"
 	"github.com/akuity/kargo/internal/cli/client"
 	"github.com/akuity/kargo/internal/cli/config"
 	"github.com/akuity/kargo/internal/cli/io"
 	"github.com/akuity/kargo/internal/cli/kubernetes"
 	"github.com/akuity/kargo/internal/cli/option"
 	"github.com/akuity/kargo/internal/cli/templates"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	rbacapi "github.com/akuity/kargo/internal/rbac/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 type revokeOptions struct {

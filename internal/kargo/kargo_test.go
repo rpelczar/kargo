@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/logging"
 )
 
@@ -301,7 +302,7 @@ func TestReverifyRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyReverify: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyReverify: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -321,7 +322,7 @@ func TestReverifyRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyReverify: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyReverify: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -330,7 +331,7 @@ func TestReverifyRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyReverify: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyReverify: (&helpers.VerificationRequest{
 							ID: "bar",
 						}).String(),
 					},
@@ -343,7 +344,7 @@ func TestReverifyRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyReverify: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyReverify: (&helpers.VerificationRequest{
 							ID:    "foo",
 							Actor: "fake-actor",
 						}).String(),
@@ -353,7 +354,7 @@ func TestReverifyRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyReverify: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyReverify: (&helpers.VerificationRequest{
 							ID:    "foo",
 							Actor: "real-actor",
 						}).String(),
@@ -367,7 +368,7 @@ func TestReverifyRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyReverify: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyReverify: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -376,7 +377,7 @@ func TestReverifyRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyReverify: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyReverify: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -486,7 +487,7 @@ func TestVerificationAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -506,7 +507,7 @@ func TestVerificationAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -515,7 +516,7 @@ func TestVerificationAbortRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.VerificationRequest{
 							ID: "bar",
 						}).String(),
 					},
@@ -528,7 +529,7 @@ func TestVerificationAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.VerificationRequest{
 							ID:    "foo",
 							Actor: "fake-actor",
 						}).String(),
@@ -538,7 +539,7 @@ func TestVerificationAbortRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.VerificationRequest{
 							ID:    "foo",
 							Actor: "real-actor",
 						}).String(),
@@ -552,7 +553,7 @@ func TestVerificationAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -561,7 +562,7 @@ func TestVerificationAbortRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Stage{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.VerificationRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.VerificationRequest{
 							ID: "foo",
 						}).String(),
 					},
@@ -671,7 +672,7 @@ func TestPromotionAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.AbortPromotionRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.AbortPromotionRequest{
 							Action: "foo",
 						}).String(),
 					},
@@ -691,7 +692,7 @@ func TestPromotionAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.AbortPromotionRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.AbortPromotionRequest{
 							Action: "foo",
 						}).String(),
 					},
@@ -700,7 +701,7 @@ func TestPromotionAbortRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.AbortPromotionRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.AbortPromotionRequest{
 							Action: "bar",
 						}).String(),
 					},
@@ -713,7 +714,7 @@ func TestPromotionAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.AbortPromotionRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.AbortPromotionRequest{
 							Action: "foo",
 							Actor:  "fake-actor",
 						}).String(),
@@ -723,7 +724,7 @@ func TestPromotionAbortRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.AbortPromotionRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.AbortPromotionRequest{
 							Action: "foo",
 							Actor:  "real-actor",
 						}).String(),
@@ -737,7 +738,7 @@ func TestPromotionAbortRequested_Update(t *testing.T) {
 			oldObject: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.AbortPromotionRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.AbortPromotionRequest{
 							Action: "foo",
 						}).String(),
 					},
@@ -746,7 +747,7 @@ func TestPromotionAbortRequested_Update(t *testing.T) {
 			newObject: &kargoapi.Promotion{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						kargoapi.AnnotationKeyAbort: (&kargoapi.AbortPromotionRequest{
+						kargoapi.AnnotationKeyAbort: (&helpers.AbortPromotionRequest{
 							Action: "foo",
 						}).String(),
 					},

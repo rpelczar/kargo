@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	rollouts "github.com/akuity/kargo/api/rollouts/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/api/config"
 	"github.com/akuity/kargo/internal/api/dex"
@@ -30,10 +31,10 @@ import (
 	"github.com/akuity/kargo/internal/api/option"
 	"github.com/akuity/kargo/internal/api/rbac"
 	"github.com/akuity/kargo/internal/api/validation"
-	rollouts "github.com/akuity/kargo/internal/controller/rollouts/api/v1alpha1"
+	"github.com/akuity/kargo/internal/helpers"
 	httputil "github.com/akuity/kargo/internal/http"
 	"github.com/akuity/kargo/internal/logging"
-	"github.com/akuity/kargo/pkg/api/service/v1alpha1/svcv1alpha1connect"
+	"github.com/akuity/kargo/internal/service/v1alpha1/svcv1alpha1connect"
 )
 
 var (
@@ -175,8 +176,8 @@ func NewServer(
 
 	s.validateProjectExistsFn = s.validateProjectExists
 	s.externalValidateProjectFn = validation.ValidateProject
-	s.getStageFn = kargoapi.GetStage
-	s.getFreightByNameOrAliasFn = kargoapi.GetFreightByNameOrAlias
+	s.getStageFn = helpers.GetStage
+	s.getFreightByNameOrAliasFn = helpers.GetFreightByNameOrAlias
 	s.isFreightAvailableFn = s.isFreightAvailable
 	s.createPromotionFn = kubeClient.Create
 	s.findDownstreamStagesFn = s.findDownstreamStages

@@ -18,7 +18,7 @@ import (
 	"github.com/akuity/kargo/internal/api/config"
 	"github.com/akuity/kargo/internal/api/kubernetes"
 	libCreds "github.com/akuity/kargo/internal/credentials"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 func TestCreateCredentials(t *testing.T) {

@@ -15,21 +15,21 @@ var ReservedStepAliasRegex = regexp.MustCompile(`^(step|task)-\d+$`)
 // SimpleEngine is a simple engine that executes a list of PromotionSteps in
 // sequence.
 type SimpleEngine struct {
-	registry      *StepRunnerRegistry
+	registry      directivesRegistry
 	credentialsDB credentials.Database
 	kargoClient   client.Client
 	argoCDClient  client.Client
 }
 
 // NewSimpleEngine returns a new SimpleEngine that uses the package's built-in
-// StepRunnerRegistry.
+// directive registry.
 func NewSimpleEngine(
 	credentialsDB credentials.Database,
 	kargoClient client.Client,
 	argoCDClient client.Client,
 ) *SimpleEngine {
 	return &SimpleEngine{
-		registry:      builtins,
+		registry:      directives,
 		credentialsDB: credentialsDB,
 		kargoClient:   kargoClient,
 		argoCDClient:  argoCDClient,

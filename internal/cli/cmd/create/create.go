@@ -18,7 +18,7 @@ import (
 	"github.com/akuity/kargo/internal/cli/kubernetes"
 	"github.com/akuity/kargo/internal/cli/option"
 	"github.com/akuity/kargo/internal/cli/templates"
-	kargosvcapi "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	kargosvcapi "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 type createOptions struct {

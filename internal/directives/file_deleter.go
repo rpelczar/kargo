@@ -12,76 +12,77 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(newFileDeleter(), nil)
+	Register(newFileDeleter())
 }
 
-// fileDeleter is an implementation of the PromotionStepRunner interface that
-// deletes a file or directory.
+// fileDeleter is an implementation of the Promoter interface that deletes a
+// file or directory.
 type fileDeleter struct {
 	schemaLoader gojsonschema.JSONLoader
 }
 
-// newFileDeleter returns an implementation of the PromotionStepRunner interface
-// that deletes a file or directory.
-func newFileDeleter() PromotionStepRunner {
+// newFileDeleter returns an initialized fileDeleter.
+func newFileDeleter() *fileDeleter {
 	r := &fileDeleter{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
 }
 
-// Name implements the PromotionStepRunner interface
+// Name implements the Namer interface
 func (f *fileDeleter) Name() string {
 	return "delete"
 }
 
-// RunPromotionStep implements the PromotionStepRunner interface.
-func (f *fileDeleter) RunPromotionStep(
+// Promote implements the Promoter interface.
+func (f *fileDeleter) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
 	// Validate the configuration against the JSON Schema.
 	if err := validate(f.schemaLoader, gojsonschema.NewGoLoader(stepCtx.Config), f.Name()); err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	// Convert the configuration into a typed object.
-	cfg, err := ConfigToStruct[DeleteConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.DeleteConfig](stepCtx.Config)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not convert config into %s config: %w", f.Name(), err)
 	}
 
-	return f.runPromotionStep(ctx, stepCtx, cfg)
+	return f.delete(ctx, stepCtx, cfg)
 }
 
-func (f *fileDeleter) runPromotionStep(
+func (f *fileDeleter) delete(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
-	cfg DeleteConfig,
-) (PromotionStepResult, error) {
+	stepCtx *dirsdk.PromotionStepContext,
+	cfg builtins.DeleteConfig,
+) (*dirsdk.PromotionStepResult, error) {
 	absPath, err := f.resolveAbsPath(stepCtx.WorkDir, cfg.Path)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 			fmt.Errorf("could not secure join path %q: %w", cfg.Path, err)
 	}
 
 	symlink, err := f.isSymlink(absPath)
 	if err != nil {
-		return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+		return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 	}
 
 	if symlink {
 		if f.ignoreNotExist(cfg.Strict, os.Remove(absPath)) != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, err
 		}
 	} else {
 		// Secure join the paths to prevent path traversal.
 		pathToDelete, err := securejoin.SecureJoin(stepCtx.WorkDir, cfg.Path)
 		if err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("could not secure join path %q: %w", cfg.Path, err)
 		}
 
@@ -89,12 +90,12 @@ func (f *fileDeleter) runPromotionStep(
 			cfg.Strict,
 			removePath(pathToDelete),
 		); err != nil {
-			return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+			return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
 				fmt.Errorf("failed to delete %q: %w", cfg.Path, sanitizePathError(err, stepCtx.WorkDir))
 		}
 	}
 
-	return PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
+	return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded}, nil
 }
 
 // isSymlink checks if a path is a symlink.

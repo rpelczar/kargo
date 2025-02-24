@@ -13,24 +13,26 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_gitCommitter_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           dirsdk.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -39,14 +41,14 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name:   "neither message nor messageFromSteps is specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): Must validate one and only one schema",
 			},
 		},
 		{
 			name: "both message and messageFromSteps are specified",
-			config: Config{
+			config: dirsdk.Config{
 				"message":          "fake commit message",
 				"messageFromSteps": []string{"fake-step-alias"},
 			},
@@ -56,7 +58,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "message is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"message": "",
 			},
 			expectedProblems: []string{
@@ -65,7 +67,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "messageFromSteps is empty array",
-			config: Config{
+			config: dirsdk.Config{
 				"messageFromSteps": []string{},
 			},
 			expectedProblems: []string{
@@ -74,7 +76,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "messageFromSteps array contains an empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"messageFromSteps": []string{""},
 			},
 			expectedProblems: []string{
@@ -83,23 +85,23 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "author is not specified",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":    "/tmp/foo",
 				"message": "fake commit message",
 			},
 		},
 		{
 			name: "author email is not specified",
-			config: Config{ // Should be completely valid
-				"author":  Config{},
+			config: dirsdk.Config{ // Should be completely valid
+				"author":  dirsdk.Config{},
 				"path":    "/tmp/foo",
 				"message": "fake commit message",
 			},
 		},
 		{
 			name: "author email is empty string",
-			config: Config{ // Should be completely valid
-				"author": Config{
+			config: dirsdk.Config{ // Should be completely valid
+				"author": dirsdk.Config{
 					"email": "",
 				},
 				"path":    "/tmp/foo",
@@ -108,16 +110,16 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "author name is not specified",
-			config: Config{ // Should be completely valid
-				"author":  Config{},
+			config: dirsdk.Config{ // Should be completely valid
+				"author":  dirsdk.Config{},
 				"path":    "/tmp/foo",
 				"message": "fake commit message",
 			},
 		},
 		{
 			name: "author name is empty string",
-			config: Config{ // Should be completely valid
-				"author": Config{
+			config: dirsdk.Config{ // Should be completely valid
+				"author": dirsdk.Config{
 					"name": "",
 				},
 				"path":    "/tmp/foo",
@@ -126,8 +128,8 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
-				"author": Config{
+			config: dirsdk.Config{
+				"author": dirsdk.Config{
 					"email": "tony@starkindustries.com",
 					"name":  "Tony Stark",
 				},
@@ -137,13 +139,11 @@ func Test_gitCommitter_validate(t *testing.T) {
 		},
 	}
 
-	r := newGitCommitter()
-	runner, ok := r.(*gitCommitter)
-	require.True(t, ok)
+	committer := newGitCommitter()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := runner.validate(testCase.config)
+			err := committer.validate(testCase.config)
 			if len(testCase.expectedProblems) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -155,7 +155,7 @@ func Test_gitCommitter_validate(t *testing.T) {
 	}
 }
 
-func Test_gitCommitter_runPromotionStep(t *testing.T) {
+func Test_gitCommitter_commit(t *testing.T) {
 	// Set up a test Git server in-process
 	service := gitkit.New(
 		gitkit.Config{
@@ -205,18 +205,16 @@ func Test_gitCommitter_runPromotionStep(t *testing.T) {
 
 	// Now we can proceed to test gitCommitter...
 
-	r := newGitCommitter()
-	runner, ok := r.(*gitCommitter)
-	require.True(t, ok)
+	committer := newGitCommitter()
 
-	stepCtx := &PromotionStepContext{
+	stepCtx := &dirsdk.PromotionStepContext{
 		WorkDir: workDir,
 	}
 
-	res, err := runner.runPromotionStep(
+	res, err := committer.commit(
 		context.Background(),
 		stepCtx,
-		GitCommitConfig{
+		builtins.GitCommitConfig{
 			Path:    "master",
 			Message: "Initial commit",
 		},
@@ -236,13 +234,13 @@ func Test_gitCommitter_runPromotionStep(t *testing.T) {
 func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 	testCases := []struct {
 		name        string
-		sharedState State
-		cfg         GitCommitConfig
+		sharedState dirsdk.State
+		cfg         builtins.GitCommitConfig
 		assertions  func(t *testing.T, msg string, err error)
 	}{
 		{
 			name: "message is specified",
-			cfg:  GitCommitConfig{Message: "fake commit message"},
+			cfg:  builtins.GitCommitConfig{Message: "fake commit message"},
 			assertions: func(t *testing.T, msg string, err error) {
 				require.NoError(t, err)
 				require.Equal(t, "fake commit message", msg)
@@ -250,18 +248,18 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name:        "no output from step with alias",
-			sharedState: State{},
-			cfg:         GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
+			sharedState: dirsdk.State{},
+			cfg:         builtins.GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
 			assertions: func(t *testing.T, _ string, err error) {
 				require.NoError(t, err)
 			},
 		},
 		{
 			name: "unexpected value type from step with alias",
-			sharedState: State{
+			sharedState: dirsdk.State{
 				"fake-step-alias": "not a State",
 			},
-			cfg: GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
+			cfg: builtins.GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
 			assertions: func(t *testing.T, _ string, err error) {
 				require.ErrorContains(t, err, "output from step with alias")
 				require.ErrorContains(t, err, "is not a map[string]any")
@@ -269,10 +267,10 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name: "output from step with alias does not contain a commit message",
-			sharedState: State{
+			sharedState: dirsdk.State{
 				"fake-step-alias": map[string]any{},
 			},
-			cfg: GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
+			cfg: builtins.GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
 			assertions: func(t *testing.T, msg string, err error) {
 				require.NoError(t, err)
 				require.Equal(t, "Kargo made some changes", msg)
@@ -280,12 +278,12 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name: "output from step with alias contain a commit message that isn't a string",
-			sharedState: State{
+			sharedState: dirsdk.State{
 				"fake-step-alias": map[string]any{
 					"commitMessage": 42,
 				},
 			},
-			cfg: GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
+			cfg: builtins.GitCommitConfig{MessageFromSteps: []string{"fake-step-alias"}},
 			assertions: func(t *testing.T, _ string, err error) {
 				require.ErrorContains(
 					t, err, "commit message in output from step with alias",
@@ -295,7 +293,7 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 		{
 			name: "successful message construction",
-			sharedState: State{
+			sharedState: dirsdk.State{
 				"fake-step-alias": map[string]any{
 					"commitMessage": "part one",
 				},
@@ -303,7 +301,7 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 					"commitMessage": "part two",
 				},
 			},
-			cfg: GitCommitConfig{
+			cfg: builtins.GitCommitConfig{
 				MessageFromSteps: []string{
 					"fake-step-alias",
 					"another-fake-step-alias",
@@ -318,13 +316,11 @@ func Test_gitCommitter_buildCommitMessage(t *testing.T) {
 		},
 	}
 
-	r := newGitCommitter()
-	runner, ok := r.(*gitCommitter)
-	require.True(t, ok)
+	committer := newGitCommitter()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			commitMsg, err := runner.buildCommitMessage(
+			commitMsg, err := committer.buildCommitMessage(
 				testCase.sharedState,
 				testCase.cfg,
 			)

@@ -12,8 +12,9 @@ import (
 	"github.com/akuity/kargo/internal/cli/config"
 	"github.com/akuity/kargo/internal/cli/option"
 	"github.com/akuity/kargo/internal/cli/templates"
-	v1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
-	"github.com/akuity/kargo/pkg/api/service/v1alpha1/svcv1alpha1connect"
+	"github.com/akuity/kargo/internal/helpers"
+	v1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
+	"github.com/akuity/kargo/internal/service/v1alpha1/svcv1alpha1connect"
 )
 
 func newRefreshWarehouseCommand(cfg config.CLIConfig) *cobra.Command {
@@ -81,7 +82,7 @@ func waitForWarehouse(
 		if msg == nil || msg.Warehouse == nil {
 			return errors.New("unexpected response")
 		}
-		token, ok := kargoapi.RefreshAnnotationValue(msg.Warehouse.GetAnnotations())
+		token, ok := helpers.RefreshAnnotationValue(msg.Warehouse.GetAnnotations())
 		if !ok {
 			return fmt.Errorf(
 				"Warehouse %q in Project %q has no %q annotation",

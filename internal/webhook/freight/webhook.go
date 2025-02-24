@@ -22,6 +22,7 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/git"
 	"github.com/akuity/kargo/internal/helm"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/indexer"
 	libEvent "github.com/akuity/kargo/internal/kubernetes/event"
 	libWebhook "github.com/akuity/kargo/internal/webhook"
@@ -108,7 +109,7 @@ func newWebhook(
 	w.validateProjectFn = libWebhook.ValidateProject
 	w.listFreightFn = kubeClient.List
 	w.listStagesFn = kubeClient.List
-	w.getWarehouseFn = kargoapi.GetWarehouse
+	w.getWarehouseFn = helpers.GetWarehouse
 	w.validateFreightArtifactsFn = validateFreightArtifacts
 	w.isRequestFromKargoControlplaneFn = libWebhook.IsRequestFromKargoControlplane(cfg.ControlplaneUserRegex)
 	return w
@@ -126,7 +127,7 @@ func (w *webhook) Default(ctx context.Context, obj runtime.Object) error {
 	if req.Operation == admissionv1.Create {
 		// Re-calculate ID in case it wasn't set correctly to begin with -- possible
 		// when users create their own Freight.
-		freight.Name = freight.GenerateID()
+		freight.Name = helpers.GenerateID(freight)
 	}
 
 	// Sync the convenience alias field with the alias label
@@ -277,7 +278,7 @@ func (w *webhook) ValidateUpdate(
 	// Record Freight approved events if the request doesn't come from Kargo controlplane.
 	if !w.isRequestFromKargoControlplaneFn(req) {
 		for approvedStage := range newFreight.Status.ApprovedFor {
-			if !oldFreight.IsApprovedFor(approvedStage) {
+			if !helpers.IsApprovedFor(oldFreight, approvedStage) {
 				w.recordFreightApprovedEvent(req, newFreight, approvedStage)
 			}
 		}
@@ -322,10 +323,10 @@ func (w *webhook) recordFreightApprovedEvent(
 	f *kargoapi.Freight,
 	stageName string,
 ) {
-	actor := kargoapi.FormatEventKubernetesUserActor(req.UserInfo)
+	actor := helpers.FormatEventKubernetesUserActor(req.UserInfo)
 	w.recorder.AnnotatedEventf(
 		f,
-		kargoapi.NewFreightApprovedEventAnnotations(actor, f, stageName),
+		helpers.NewFreightApprovedEventAnnotations(actor, f, stageName),
 		corev1.EventTypeNormal,
 		kargoapi.EventReasonFreightApproved,
 		"Freight approved for Stage %q by %q",

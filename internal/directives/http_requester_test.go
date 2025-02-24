@@ -11,24 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_httpRequester_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           dirsdk.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "url not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): url is required",
 			},
 		},
 		{
 			name: "url is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"url": "",
 			},
 			expectedProblems: []string{
@@ -37,7 +39,7 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "invalid method",
-			config: Config{
+			config: dirsdk.Config{
 				"method": "invalid",
 			},
 			expectedProblems: []string{
@@ -46,8 +48,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header name not specified",
-			config: Config{
-				"headers": []Config{{}},
+			config: dirsdk.Config{
+				"headers": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"headers.0: name is required",
@@ -55,8 +57,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header name is empty string",
-			config: Config{
-				"headers": []Config{{
+			config: dirsdk.Config{
+				"headers": []dirsdk.Config{{
 					"name": "",
 				}},
 			},
@@ -66,8 +68,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header value not specified",
-			config: Config{
-				"headers": []Config{{}},
+			config: dirsdk.Config{
+				"headers": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"headers.0: value is required",
@@ -75,8 +77,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "header value is empty string",
-			config: Config{
-				"headers": []Config{{
+			config: dirsdk.Config{
+				"headers": []dirsdk.Config{{
 					"value": "",
 				}},
 			},
@@ -86,8 +88,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param name not specified",
-			config: Config{
-				"queryParams": []Config{{}},
+			config: dirsdk.Config{
+				"queryParams": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"queryParams.0: name is required",
@@ -95,8 +97,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param name is empty string",
-			config: Config{
-				"queryParams": []Config{{
+			config: dirsdk.Config{
+				"queryParams": []dirsdk.Config{{
 					"name": "",
 				}},
 			},
@@ -106,8 +108,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param value not specified",
-			config: Config{
-				"queryParams": []Config{{}},
+			config: dirsdk.Config{
+				"queryParams": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"queryParams.0: value is required",
@@ -115,8 +117,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "query param value is empty string",
-			config: Config{
-				"queryParams": []Config{{
+			config: dirsdk.Config{
+				"queryParams": []dirsdk.Config{{
 					"value": "",
 				}},
 			},
@@ -126,7 +128,7 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "invalid timeout",
-			config: Config{
+			config: dirsdk.Config{
 				"timeout": "invalid",
 			},
 			expectedProblems: []string{
@@ -135,8 +137,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output name not specified",
-			config: Config{
-				"outputs": []Config{{}},
+			config: dirsdk.Config{
+				"outputs": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"outputs.0: name is required",
@@ -144,8 +146,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output name is empty string",
-			config: Config{
-				"outputs": []Config{{
+			config: dirsdk.Config{
+				"outputs": []dirsdk.Config{{
 					"name": "",
 				}},
 			},
@@ -155,8 +157,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output fromExpression not specified",
-			config: Config{
-				"outputs": []Config{{}},
+			config: dirsdk.Config{
+				"outputs": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"outputs.0: fromExpression is required",
@@ -164,8 +166,8 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "output fromExpression is empty string",
-			config: Config{
-				"outputs": []Config{{
+			config: dirsdk.Config{
+				"outputs": []dirsdk.Config{{
 					"fromExpression": "",
 				}},
 			},
@@ -175,14 +177,14 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: dirsdk.Config{
 				"method": "GET",
 				"url":    "https://example.com",
-				"headers": []Config{{
+				"headers": []dirsdk.Config{{
 					"name":  "Accept",
 					"value": "application/json",
 				}},
-				"queryParams": []Config{{
+				"queryParams": []dirsdk.Config{{
 					"name":  "foo",
 					"value": "bar",
 				}},
@@ -190,7 +192,7 @@ func Test_httpRequester_validate(t *testing.T) {
 				"timeout":               "30s",
 				"successExpression":     "response.status == 200",
 				"failureExpression":     "response.status == 404",
-				"outputs": []Config{
+				"outputs": []dirsdk.Config{
 					{
 						"name":           "fact1",
 						"fromExpression": "response.body.facts[0]",
@@ -204,13 +206,11 @@ func Test_httpRequester_validate(t *testing.T) {
 		},
 	}
 
-	r := newHTTPRequester()
-	runner, ok := r.(*httpRequester)
-	require.True(t, ok)
+	templater := newHTTPRequester()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := runner.validate(testCase.config)
+			err := templater.validate(testCase.config)
 			if len(testCase.expectedProblems) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -222,19 +222,19 @@ func Test_httpRequester_validate(t *testing.T) {
 	}
 }
 
-func Test_httpRequester_runPromotionStep(t *testing.T) {
+func Test_httpRequester_request(t *testing.T) {
 	testCases := []struct {
 		name       string
-		cfg        HTTPConfig
+		cfg        builtins.HTTPConfig
 		handler    http.HandlerFunc
-		assertions func(*testing.T, PromotionStepResult, error)
+		assertions func(*testing.T, *dirsdk.PromotionStepResult, error)
 	}{
 		{
 			name:    "success and not failed; no body",
 			handler: func(_ http.ResponseWriter, _ *http.Request) {},
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				SuccessExpression: "true",
-				Outputs: []HTTPOutput{
+				Outputs: []builtins.HTTPOutput{
 					{
 						Name:           "status",
 						FromExpression: "response.status",
@@ -245,7 +245,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res *dirsdk.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 				require.Equal(
@@ -265,9 +265,9 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 				_, err := w.Write([]byte(`{"theMeaningOfLife": 42}`))
 				require.NoError(t, err)
 			},
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				SuccessExpression: "true",
-				Outputs: []HTTPOutput{
+				Outputs: []builtins.HTTPOutput{
 					{
 						Name:           "status",
 						FromExpression: "response.status",
@@ -278,7 +278,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res *dirsdk.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 				require.Equal(
@@ -298,9 +298,9 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 				_, err := w.Write([]byte(`{"theMeaningOfLife": 42}`))
 				require.NoError(t, err)
 			},
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				SuccessExpression: "true",
-				Outputs: []HTTPOutput{
+				Outputs: []builtins.HTTPOutput{
 					{
 						Name:           "status",
 						FromExpression: "response.status",
@@ -311,7 +311,7 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 					},
 				},
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res *dirsdk.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseSucceeded, res.Status)
 				require.Equal(
@@ -329,10 +329,10 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNotFound)
 			},
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				FailureExpression: "response.status == 404",
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res *dirsdk.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "HTTP (404) response met failure criteria")
 				require.True(t, isTerminal(err))
 				require.Equal(t, kargoapi.PromotionPhaseFailed, res.Status)
@@ -341,11 +341,11 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 		{
 			name:    "success AND failed", // Treated like a failure
 			handler: func(_ http.ResponseWriter, _ *http.Request) {},
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				SuccessExpression: "response.status == 200",
 				FailureExpression: "response.status == 200",
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res *dirsdk.PromotionStepResult, err error) {
 				require.ErrorContains(t, err, "HTTP (200) response met failure criteria")
 				require.True(t, isTerminal(err))
 				require.Equal(t, kargoapi.PromotionPhaseFailed, res.Status)
@@ -356,11 +356,11 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusBadGateway)
 			},
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				SuccessExpression: "response.status == 200",
 				FailureExpression: "response.status == 404",
 			},
-			assertions: func(t *testing.T, res PromotionStepResult, err error) {
+			assertions: func(t *testing.T, res *dirsdk.PromotionStepResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, kargoapi.PromotionPhaseRunning, res.Status)
 			},
@@ -374,21 +374,21 @@ func Test_httpRequester_runPromotionStep(t *testing.T) {
 			srv := httptest.NewServer(testCase.handler)
 			t.Cleanup(srv.Close)
 			testCase.cfg.URL = srv.URL
-			res, err := h.runPromotionStep(context.Background(), nil, testCase.cfg)
+			res, err := h.request(context.Background(), nil, testCase.cfg)
 			testCase.assertions(t, res, err)
 		})
 	}
 }
 
 func Test_httpRequester_buildRequest(t *testing.T) {
-	req, err := (&httpRequester{}).buildRequest(HTTPConfig{
+	req, err := (&httpRequester{}).buildRequest(builtins.HTTPConfig{
 		Method: "GET",
 		URL:    "http://example.com",
-		Headers: []HTTPHeader{{
+		Headers: []builtins.HTTPHeader{{
 			Name:  "Content-Type",
 			Value: "application/json",
 		}},
-		QueryParams: []HTTPQueryParam{{
+		QueryParams: []builtins.HTTPQueryParam{{
 			Name:  "param",
 			Value: "some value", // We want to be sure this gets url-encoded
 		}},
@@ -402,7 +402,7 @@ func Test_httpRequester_buildRequest(t *testing.T) {
 func Test_httpRequester_getClient(t *testing.T) {
 	testCases := []struct {
 		name       string
-		cfg        HTTPConfig
+		cfg        builtins.HTTPConfig
 		assertions func(*testing.T, *http.Client, error)
 	}{
 		{
@@ -417,7 +417,7 @@ func Test_httpRequester_getClient(t *testing.T) {
 		},
 		{
 			name: "with insecureSkipTLSVerify",
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				InsecureSkipTLSVerify: true,
 			},
 			assertions: func(t *testing.T, client *http.Client, err error) {
@@ -431,7 +431,7 @@ func Test_httpRequester_getClient(t *testing.T) {
 		},
 		{
 			name: "with invalid timeout",
-			cfg: HTTPConfig{
+			cfg: builtins.HTTPConfig{
 				Timeout: "invalid",
 			},
 			assertions: func(t *testing.T, _ *http.Client, err error) {
@@ -514,34 +514,34 @@ func Test_httpRequester_buildExprEnv(t *testing.T) {
 func Test_httpRequester_wasRequestSuccessful(t *testing.T) {
 	testCases := []struct {
 		name       string
-		cfg        HTTPConfig
+		cfg        builtins.HTTPConfig
 		statusCode int
 		assertions func(t *testing.T, success bool, err error)
 	}{
 		{
 			name: "error compiling success expression",
-			cfg:  HTTPConfig{SuccessExpression: "(1 + 2"},
+			cfg:  builtins.HTTPConfig{SuccessExpression: "(1 + 2"},
 			assertions: func(t *testing.T, _ bool, err error) {
 				require.ErrorContains(t, err, "error compiling success expression")
 			},
 		},
 		{
 			name: "error evaluating success expression",
-			cfg:  HTTPConfig{SuccessExpression: "invalid()"},
+			cfg:  builtins.HTTPConfig{SuccessExpression: "invalid()"},
 			assertions: func(t *testing.T, _ bool, err error) {
 				require.ErrorContains(t, err, "error evaluating success expression")
 			},
 		},
 		{
 			name: "success expression evaluates to non-boolean",
-			cfg:  HTTPConfig{SuccessExpression: `"foo"`},
+			cfg:  builtins.HTTPConfig{SuccessExpression: `"foo"`},
 			assertions: func(t *testing.T, _ bool, err error) {
 				require.ErrorContains(t, err, "success expression did not evaluate to a boolean")
 			},
 		},
 		{
 			name: "success expression evaluates to true",
-			cfg:  HTTPConfig{SuccessExpression: "true"},
+			cfg:  builtins.HTTPConfig{SuccessExpression: "true"},
 			assertions: func(t *testing.T, success bool, err error) {
 				require.NoError(t, err)
 				require.True(t, success)
@@ -549,7 +549,7 @@ func Test_httpRequester_wasRequestSuccessful(t *testing.T) {
 		},
 		{
 			name: "success expression evaluates to false",
-			cfg:  HTTPConfig{SuccessExpression: "false"},
+			cfg:  builtins.HTTPConfig{SuccessExpression: "false"},
 			assertions: func(t *testing.T, success bool, err error) {
 				require.NoError(t, err)
 				require.False(t, success)
@@ -557,7 +557,7 @@ func Test_httpRequester_wasRequestSuccessful(t *testing.T) {
 		},
 		{
 			name: "no success expression, but failure expression",
-			cfg:  HTTPConfig{FailureExpression: "true"},
+			cfg:  builtins.HTTPConfig{FailureExpression: "true"},
 			assertions: func(t *testing.T, success bool, err error) {
 				require.NoError(t, err)
 				require.False(t, success)
@@ -592,34 +592,34 @@ func Test_httpRequester_wasRequestSuccessful(t *testing.T) {
 func Test_httpRequester_didRequestFail(t *testing.T) {
 	testCases := []struct {
 		name       string
-		cfg        HTTPConfig
+		cfg        builtins.HTTPConfig
 		statusCode int
 		assertions func(t *testing.T, failed bool, err error)
 	}{
 		{
 			name: "error compiling failure expression",
-			cfg:  HTTPConfig{FailureExpression: "(1 + 2"},
+			cfg:  builtins.HTTPConfig{FailureExpression: "(1 + 2"},
 			assertions: func(t *testing.T, _ bool, err error) {
 				require.ErrorContains(t, err, "error compiling failure expression")
 			},
 		},
 		{
 			name: "error evaluating failure expression",
-			cfg:  HTTPConfig{FailureExpression: "invalid()"},
+			cfg:  builtins.HTTPConfig{FailureExpression: "invalid()"},
 			assertions: func(t *testing.T, _ bool, err error) {
 				require.ErrorContains(t, err, "error evaluating failure expression")
 			},
 		},
 		{
 			name: "failure expression evaluates to non-boolean",
-			cfg:  HTTPConfig{FailureExpression: `"foo"`},
+			cfg:  builtins.HTTPConfig{FailureExpression: `"foo"`},
 			assertions: func(t *testing.T, _ bool, err error) {
 				require.ErrorContains(t, err, "failure expression did not evaluate to a boolean")
 			},
 		},
 		{
 			name: "failure expression evaluates to true",
-			cfg:  HTTPConfig{FailureExpression: "true"},
+			cfg:  builtins.HTTPConfig{FailureExpression: "true"},
 			assertions: func(t *testing.T, failed bool, err error) {
 				require.NoError(t, err)
 				require.True(t, failed)
@@ -627,7 +627,7 @@ func Test_httpRequester_didRequestFail(t *testing.T) {
 		},
 		{
 			name: "failure expression evaluates to false",
-			cfg:  HTTPConfig{FailureExpression: "false"},
+			cfg:  builtins.HTTPConfig{FailureExpression: "false"},
 			assertions: func(t *testing.T, failed bool, err error) {
 				require.NoError(t, err)
 				require.False(t, failed)
@@ -635,7 +635,7 @@ func Test_httpRequester_didRequestFail(t *testing.T) {
 		},
 		{
 			name: "no failure expression, but success expression",
-			cfg:  HTTPConfig{SuccessExpression: "true"},
+			cfg:  builtins.HTTPConfig{SuccessExpression: "true"},
 			assertions: func(t *testing.T, failed bool, err error) {
 				require.NoError(t, err)
 				require.False(t, failed)
@@ -670,7 +670,7 @@ func Test_httpRequester_didRequestFail(t *testing.T) {
 func Test_httpRequester_buildOutputs(t *testing.T) {
 	testCases := []struct {
 		name        string
-		outputExprs []HTTPOutput
+		outputExprs []builtins.HTTPOutput
 		assertions  func(t *testing.T, outputs map[string]any, err error)
 	}{
 		{
@@ -682,7 +682,7 @@ func Test_httpRequester_buildOutputs(t *testing.T) {
 		},
 		{
 			name: "error compiling output expression",
-			outputExprs: []HTTPOutput{{
+			outputExprs: []builtins.HTTPOutput{{
 				Name:           "fake-output",
 				FromExpression: "(1 + 2",
 			}},
@@ -692,7 +692,7 @@ func Test_httpRequester_buildOutputs(t *testing.T) {
 		},
 		{
 			name: "error evaluating output expression",
-			outputExprs: []HTTPOutput{{
+			outputExprs: []builtins.HTTPOutput{{
 				Name:           "fake-output",
 				FromExpression: "invalid()",
 			}},
@@ -702,7 +702,7 @@ func Test_httpRequester_buildOutputs(t *testing.T) {
 		},
 		{
 			name: "success",
-			outputExprs: []HTTPOutput{
+			outputExprs: []builtins.HTTPOutput{
 				{
 					Name:           "string-output",
 					FromExpression: `"foo"`,

@@ -10,8 +10,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/kargo"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 // PromoteDownstream creates Promotion resources to transition all Stages
@@ -117,7 +118,7 @@ func (s *server) PromoteDownstream(
 	}
 
 	for _, downstream := range downstreams {
-		if !downstream.IsFreightAvailable(freight) {
+		if !helpers.IsFreightAvailable(&downstream, freight) {
 			return nil, connect.NewError(
 				connect.CodeInvalidArgument,
 				fmt.Errorf(

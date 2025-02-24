@@ -4,37 +4,39 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 func TestConfig_DeepCopy(t *testing.T) {
 	tests := []struct {
 		name       string
-		config     Config
-		assertions func(*testing.T, Config, Config)
+		config     dirsdk.Config
+		assertions func(*testing.T, dirsdk.Config, dirsdk.Config)
 	}{
 		{
 			name:   "nil config",
 			config: nil,
-			assertions: func(t *testing.T, _, copied Config) {
+			assertions: func(t *testing.T, _, copied dirsdk.Config) {
 				assert.Nil(t, copied, "Expected nil result for nil input")
 			},
 		},
 		{
 			name:   "empty config",
-			config: Config{},
-			assertions: func(t *testing.T, original, copied Config) {
+			config: dirsdk.Config{},
+			assertions: func(t *testing.T, original, copied dirsdk.Config) {
 				assert.Empty(t, copied, "Expected empty result for empty input")
 				assert.NotSame(t, &original, &copied, "Expected a new instance, not the same reference")
 			},
 		},
 		{
 			name: "simple config",
-			config: Config{
+			config: dirsdk.Config{
 				"key1": "value1",
 				"key2": int64(42),
 				"key3": true,
 			},
-			assertions: func(t *testing.T, original, copied Config) {
+			assertions: func(t *testing.T, original, copied dirsdk.Config) {
 				assert.Equal(t, original, copied, "Expected equal content")
 				assert.NotSame(t, &original, &copied, "Expected a new instance, not the same reference")
 
@@ -45,7 +47,7 @@ func TestConfig_DeepCopy(t *testing.T) {
 		},
 		{
 			name: "nested config",
-			config: Config{
+			config: dirsdk.Config{
 				"key1": "value1",
 				"key2": map[string]any{
 					"nested1": "nestedValue1",
@@ -53,7 +55,7 @@ func TestConfig_DeepCopy(t *testing.T) {
 				},
 				"key3": []any{int64(1), int64(2), int64(3)},
 			},
-			assertions: func(t *testing.T, original, copied Config) {
+			assertions: func(t *testing.T, original, copied dirsdk.Config) {
 				assert.Equal(t, original, copied, "Expected equal content")
 				assert.NotSame(t, &original, &copied, "Expected a new instance, not the same reference")
 
@@ -90,16 +92,16 @@ func TestConfig_DeepCopy(t *testing.T) {
 func TestConfig_ToJSON(t *testing.T) {
 	tests := []struct {
 		name   string
-		config Config
+		config dirsdk.Config
 		want   string
 	}{
 		{
 			name:   "empty config",
-			config: Config{},
+			config: dirsdk.Config{},
 		},
 		{
 			name: "simple config",
-			config: Config{
+			config: dirsdk.Config{
 				"key1": "value1",
 				"key2": int64(42),
 				"key3": true,
@@ -108,7 +110,7 @@ func TestConfig_ToJSON(t *testing.T) {
 		},
 		{
 			name: "nested config",
-			config: Config{
+			config: dirsdk.Config{
 				"key1": "value1",
 				"key2": map[string]any{
 					"nested1": "nestedValue1",
@@ -120,7 +122,7 @@ func TestConfig_ToJSON(t *testing.T) {
 		},
 		{
 			name: "config with nil value",
-			config: Config{
+			config: dirsdk.Config{
 				"key1": nil,
 				"key2": "value2",
 			},

@@ -18,6 +18,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/credentials"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 func TestSimpleEngine_Promote(t *testing.T) {
@@ -32,7 +33,7 @@ func TestSimpleEngine_Promote(t *testing.T) {
 			name: "successful promotion",
 			promoCtx: PromotionContext{
 				Project: "test-project",
-				State:   State{"existing": "state"},
+				State:   dirsdk.State{"existing": "state"},
 			},
 			steps: []PromotionStep{
 				{Kind: "success-step"},
@@ -101,32 +102,29 @@ func TestSimpleEngine_Promote(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			testRegistry := NewStepRunnerRegistry()
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
-					name:      "success-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded},
+			testRegistry := directivesRegistry{}
+			testRegistry.register(
+				&mockPromoter{
+					name:          "success-step",
+					promoteResult: &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseSucceeded},
 				},
-				&StepRunnerPermissions{},
 			)
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
-					name:      "error-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
-					runErr:    errors.New("something went wrong"),
+			testRegistry.register(
+				&mockPromoter{
+					name:          "error-step",
+					promoteResult: &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+					promoteErr:    errors.New("something went wrong"),
 				},
-				&StepRunnerPermissions{},
 			)
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
+			testRegistry.register(
+				&mockPromoter{
 					name: "context-waiter",
-					runFunc: func(ctx context.Context, _ *PromotionStepContext) (PromotionStepResult, error) {
+					promoteFunc: func(ctx context.Context, _ *dirsdk.PromotionStepContext) (*dirsdk.PromotionStepResult, error) {
 						cancel() // Cancel context immediately
 						<-ctx.Done()
-						return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
+						return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
 					},
 				},
-				&StepRunnerPermissions{},
 			)
 
 			engine := &SimpleEngine{
@@ -161,10 +159,10 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			},
 		},
 		{
-			name:  "runner not found",
+			name:  "promoter not found",
 			steps: []PromotionStep{{Kind: "unknown-step"}},
 			assertions: func(t *testing.T, result PromotionResult, err error) {
-				assert.ErrorContains(t, err, "error getting runner for step")
+				assert.ErrorContains(t, err, "error getting promoter for step")
 				assert.Equal(t, kargoapi.PromotionPhaseErrored, result.Status)
 				assert.Equal(t, int64(0), result.CurrentStep)
 			},
@@ -189,7 +187,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				}
 
 				// Verify state contains outputs from both steps
-				assert.Equal(t, State{
+				assert.Equal(t, dirsdk.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -226,7 +224,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				}
 
 				// Verify state contains outputs from both steps
-				assert.Equal(t, State{
+				assert.Equal(t, dirsdk.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -265,7 +263,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				assert.NotNil(t, result.StepExecutionMetadata[1].FinishedAt)
 
 				// Verify only second step output is in state
-				assert.Equal(t, State{
+				assert.Equal(t, dirsdk.State{
 					"step2": map[string]any{
 						"key": "value",
 					},
@@ -292,7 +290,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				assert.Contains(t, result.StepExecutionMetadata[1].Message, "something went wrong")
 
 				// Verify first step output is preserved in state
-				assert.Equal(t, State{
+				assert.Equal(t, dirsdk.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -320,7 +318,7 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 				assert.Contains(t, result.StepExecutionMetadata[1].Message, "something went wrong")
 
 				// Verify first step output is preserved in state
-				assert.Equal(t, State{
+				assert.Equal(t, dirsdk.State{
 					"step1": map[string]any{
 						"key": "value",
 					},
@@ -441,52 +439,47 @@ func TestSimpleEngine_executeSteps(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			testRegistry := NewStepRunnerRegistry()
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
+			testRegistry := directivesRegistry{}
+			testRegistry.register(
+				&mockPromoter{
 					name: "success-step",
-					runResult: PromotionStepResult{
+					promoteResult: &dirsdk.PromotionStepResult{
 						Status: kargoapi.PromotionPhaseSucceeded,
 						Output: map[string]any{"key": "value"},
 					},
 				},
-				&StepRunnerPermissions{},
 			)
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
+			testRegistry.register(
+				&mockPromoter{
 					name: "running-step",
-					runResult: PromotionStepResult{
+					promoteResult: &dirsdk.PromotionStepResult{
 						Status: kargoapi.PromotionPhaseRunning,
 					},
 				},
-				&StepRunnerPermissions{},
 			)
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
-					name:      "error-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
-					runErr:    errors.New("something went wrong"),
+			testRegistry.register(
+				&mockPromoter{
+					name:          "error-step",
+					promoteResult: &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+					promoteErr:    errors.New("something went wrong"),
 				},
-				&StepRunnerPermissions{},
 			)
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
-					name:      "terminal-error-step",
-					runResult: PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
-					runErr:    &terminalError{err: errors.New("something went wrong")},
+			testRegistry.register(
+				&mockPromoter{
+					name:          "terminal-error-step",
+					promoteResult: &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored},
+					promoteErr:    &terminalError{err: errors.New("something went wrong")},
 				},
-				&StepRunnerPermissions{},
 			)
-			testRegistry.RegisterPromotionStepRunner(
-				&mockPromotionStepRunner{
+			testRegistry.register(
+				&mockPromoter{
 					name: "context-waiter",
-					runFunc: func(ctx context.Context, _ *PromotionStepContext) (PromotionStepResult, error) {
+					promoteFunc: func(ctx context.Context, _ *dirsdk.PromotionStepContext) (*dirsdk.PromotionStepResult, error) {
 						cancel()
 						<-ctx.Done()
-						return PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
+						return &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}, ctx.Err()
 					},
 				},
-				&StepRunnerPermissions{},
 			)
 
 			engine := &SimpleEngine{
@@ -505,20 +498,18 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 		name       string
 		promoCtx   PromotionContext
 		step       PromotionStep
-		reg        PromotionStepRunnerRegistration
-		assertions func(*testing.T, PromotionStepResult, error)
+		promoter   Promoter
+		assertions func(*testing.T, *dirsdk.PromotionStepResult, error)
 	}{
 		{
 			name: "successful step execution",
-			reg: PromotionStepRunnerRegistration{
-				Runner: &mockPromotionStepRunner{
-					name: "success-step",
-					runResult: PromotionStepResult{
-						Status: kargoapi.PromotionPhaseSucceeded,
-					},
+			promoter: &mockPromoter{
+				name: "success-step",
+				promoteResult: &dirsdk.PromotionStepResult{
+					Status: kargoapi.PromotionPhaseSucceeded,
 				},
 			},
-			assertions: func(t *testing.T, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, result *dirsdk.PromotionStepResult, err error) {
 				assert.NoError(t, err)
 				assert.Equal(t, kargoapi.PromotionPhaseSucceeded, result.Status)
 			},
@@ -526,16 +517,14 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 		{
 			name: "step execution failure",
 			step: PromotionStep{Kind: "error-step"},
-			reg: PromotionStepRunnerRegistration{
-				Runner: &mockPromotionStepRunner{
-					name: "error-step",
-					runResult: PromotionStepResult{
-						Status: kargoapi.PromotionPhaseErrored,
-					},
-					runErr: errors.New("something went wrong"),
+			promoter: &mockPromoter{
+				name: "error-step",
+				promoteResult: &dirsdk.PromotionStepResult{
+					Status: kargoapi.PromotionPhaseErrored,
 				},
+				promoteErr: errors.New("something went wrong"),
 			},
-			assertions: func(t *testing.T, result PromotionStepResult, err error) {
+			assertions: func(t *testing.T, result *dirsdk.PromotionStepResult, err error) {
 				assert.ErrorContains(t, err, "failed to run step \"error-step\"")
 				assert.ErrorContains(t, err, "something went wrong")
 				assert.Equal(t, kargoapi.PromotionPhaseErrored, result.Status)
@@ -549,7 +538,14 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 				kargoClient: fake.NewClientBuilder().Build(),
 			}
 
-			result, err := engine.executeStep(context.Background(), tt.promoCtx, tt.step, tt.reg, t.TempDir(), make(State))
+			result, err := engine.executeStep(
+				context.Background(),
+				tt.promoCtx,
+				tt.step,
+				tt.promoter,
+				t.TempDir(),
+				make(dirsdk.State),
+			)
 			tt.assertions(t, result, err)
 		})
 	}
@@ -557,11 +553,10 @@ func TestSimpleEngine_executeStep(t *testing.T) {
 
 func TestSimpleEngine_preparePromotionStepContext(t *testing.T) {
 	tests := []struct {
-		name        string
-		promoCtx    PromotionContext
-		step        PromotionStep
-		permissions StepRunnerPermissions
-		assertions  func(*testing.T, *PromotionStepContext, error)
+		name       string
+		promoCtx   PromotionContext
+		step       PromotionStep
+		assertions func(*testing.T, context.Context, *dirsdk.PromotionStepContext, error)
 	}{
 		{
 			name: "successful context preparation",
@@ -571,31 +566,14 @@ func TestSimpleEngine_preparePromotionStepContext(t *testing.T) {
 				UIBaseURL: "http://test",
 			},
 			step: PromotionStep{Kind: "test-step"},
-			permissions: StepRunnerPermissions{
-				AllowCredentialsDB: true,
-				AllowKargoClient:   true,
-				AllowArgoCDClient:  true,
-			},
-			assertions: func(t *testing.T, ctx *PromotionStepContext, err error) {
+			assertions: func(t *testing.T, ctx context.Context, stepCtx *dirsdk.PromotionStepContext, err error) {
 				assert.NoError(t, err)
-				assert.Equal(t, "test-project", ctx.Project)
-				assert.Equal(t, "test-stage", ctx.Stage)
-				assert.Equal(t, "http://test", ctx.UIBaseURL)
-				assert.NotNil(t, ctx.CredentialsDB)
-				assert.NotNil(t, ctx.KargoClient)
-				assert.NotNil(t, ctx.ArgoCDClient)
-			},
-		},
-		{
-			name:        "permissions control client access",
-			promoCtx:    PromotionContext{},
-			step:        PromotionStep{Kind: "test-step"},
-			permissions: StepRunnerPermissions{},
-			assertions: func(t *testing.T, ctx *PromotionStepContext, err error) {
-				assert.NoError(t, err)
-				assert.Nil(t, ctx.CredentialsDB)
-				assert.Nil(t, ctx.KargoClient)
-				assert.Nil(t, ctx.ArgoCDClient)
+				assert.Equal(t, "test-project", stepCtx.Project)
+				assert.Equal(t, "test-stage", stepCtx.Stage)
+				assert.Equal(t, "http://test", stepCtx.UIBaseURL)
+				assert.NotNil(t, ctx.Value(kargoClientContextKey{}))
+				assert.NotNil(t, ctx.Value(argoCDClientContextKey{}))
+				assert.NotNil(t, ctx.Value(credentialsDBContextKey{}))
 			},
 		},
 	}
@@ -603,21 +581,20 @@ func TestSimpleEngine_preparePromotionStepContext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			engine := &SimpleEngine{
-				registry:      NewStepRunnerRegistry(),
+				registry:      directivesRegistry{},
 				kargoClient:   fake.NewClientBuilder().Build(),
 				argoCDClient:  fake.NewClientBuilder().Build(),
 				credentialsDB: &credentials.FakeDB{},
 			}
 
-			stepCtx, err := engine.preparePromotionStepContext(
+			ctx, stepCtx, err := engine.preparePromotionStepContext(
 				context.Background(),
 				tt.promoCtx,
 				tt.step,
-				tt.permissions,
 				t.TempDir(),
-				make(State),
+				make(dirsdk.State),
 			)
-			tt.assertions(t, stepCtx, err)
+			tt.assertions(t, ctx, stepCtx, err)
 		})
 	}
 }

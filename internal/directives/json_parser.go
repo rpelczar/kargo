@@ -11,10 +11,12 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	"github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func init() {
-	builtins.RegisterPromotionStepRunner(newJSONParser(), nil)
+	Register(newJSONParser())
 }
 
 // jsonParser is an implementation of the PromotionStepRunner interface that
@@ -24,7 +26,7 @@ type jsonParser struct {
 }
 
 // newJSONParser returns a new instance of jsonParser.
-func newJSONParser() PromotionStepRunner {
+func newJSONParser() Promoter {
 	r := &jsonParser{}
 	r.schemaLoader = getConfigSchemaLoader(r.Name())
 	return r
@@ -35,35 +37,35 @@ func (jp *jsonParser) Name() string {
 	return "json-parse"
 }
 
-func (jp *jsonParser) RunPromotionStep(
+func (jp *jsonParser) Promote(
 	ctx context.Context,
-	stepCtx *PromotionStepContext,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *dirsdk.PromotionStepContext,
+) (*dirsdk.PromotionStepResult, error) {
+	failure := &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if err := jp.validate(stepCtx.Config); err != nil {
 		return failure, err
 	}
 
-	cfg, err := ConfigToStruct[JSONParseConfig](stepCtx.Config)
+	cfg, err := ConfigToStruct[builtins.JSONParseConfig](stepCtx.Config)
 	if err != nil {
 		return failure, fmt.Errorf("could not convert config into %s config: %w", jp.Name(), err)
 	}
 
-	return jp.runPromotionStep(ctx, stepCtx, cfg)
+	return jp.promote(ctx, stepCtx, cfg)
 }
 
 // validate validates jsonParser configuration against a JSON schema.
-func (jp *jsonParser) validate(cfg Config) error {
+func (jp *jsonParser) validate(cfg dirsdk.Config) error {
 	return validate(jp.schemaLoader, gojsonschema.NewGoLoader(cfg), jp.Name())
 }
 
-func (jp *jsonParser) runPromotionStep(
+func (jp *jsonParser) promote(
 	_ context.Context,
-	stepCtx *PromotionStepContext,
-	cfg JSONParseConfig,
-) (PromotionStepResult, error) {
-	failure := PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
+	stepCtx *dirsdk.PromotionStepContext,
+	cfg builtins.JSONParseConfig,
+) (*dirsdk.PromotionStepResult, error) {
+	failure := &dirsdk.PromotionStepResult{Status: kargoapi.PromotionPhaseErrored}
 
 	if cfg.Path == "" {
 		return failure, fmt.Errorf("JSON file path cannot be empty")
@@ -83,7 +85,7 @@ func (jp *jsonParser) runPromotionStep(
 		return failure, fmt.Errorf("failed to extract outputs: %w", err)
 	}
 
-	return PromotionStepResult{
+	return &dirsdk.PromotionStepResult{
 		Status: kargoapi.PromotionPhaseSucceeded,
 		Output: extractedValues,
 	}, nil
@@ -111,7 +113,7 @@ func (jp *jsonParser) readAndParseJSON(workDir string, path string) (map[string]
 }
 
 // extractValues evaluates JSONPath expressions using expr and returns extracted values.
-func (jp *jsonParser) extractValues(data map[string]any, outputs []JSONParse) (map[string]any, error) {
+func (jp *jsonParser) extractValues(data map[string]any, outputs []builtins.JSONParse) (map[string]any, error) {
 	results := make(map[string]any)
 
 	for _, output := range outputs {

@@ -14,24 +14,26 @@ import (
 
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_gitPusher_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           dirsdk.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "path not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): path is required",
 			},
 		},
 		{
 			name: "path is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"path": "",
 			},
 			expectedProblems: []string{
@@ -40,7 +42,7 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "maxAttempts < 1",
-			config: Config{
+			config: dirsdk.Config{
 				"maxAttempts": 0,
 			},
 			expectedProblems: []string{
@@ -49,7 +51,7 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: fmt.Sprintf("maxAttempts > %d", math.MaxInt32),
-			config: Config{
+			config: dirsdk.Config{
 				"maxAttempts": math.MaxInt32 + 1,
 			},
 			expectedProblems: []string{
@@ -58,14 +60,14 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "just generateTargetBranch is true",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": true,
 			},
 		},
 		{
 			name: "generateTargetBranch is true and targetBranch is empty string",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": true,
 				"targetBranch":         "",
@@ -74,7 +76,7 @@ func Test_gitPusher_validate(t *testing.T) {
 		{
 			name: "generateTargetBranch is true and targetBranch is specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
+			config: dirsdk.Config{
 				"path":                 "/fake/path",
 				"generateTargetBranch": true,
 				"targetBranch":         "fake-branch",
@@ -85,34 +87,34 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "generateTargetBranch not specified and targetBranch not specified",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path": "/fake/path",
 			},
 		},
 		{
 			name: "generateTargetBranch not specified and targetBranch is empty string",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":         "/fake/path",
 				"targetBranch": "",
 			},
 		},
 		{
 			name: "generateTargetBranch not specified and targetBranch is specified",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":         "/fake/path",
 				"targetBranch": "fake-branch",
 			},
 		},
 		{
 			name: "just generateTargetBranch is false",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": false,
 			},
 		},
 		{
 			name: "generateTargetBranch is false and targetBranch is empty string",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":                 "/fake/path",
 				"generateTargetBranch": false,
 				"targetBranch":         "",
@@ -120,20 +122,18 @@ func Test_gitPusher_validate(t *testing.T) {
 		},
 		{
 			name: "generateTargetBranch is false and targetBranch is specified",
-			config: Config{ // Should be completely valid
+			config: dirsdk.Config{ // Should be completely valid
 				"path":         "/fake/path",
 				"targetBranch": "fake-branch",
 			},
 		},
 	}
 
-	r := newGitPusher()
-	runner, ok := r.(*gitPushPusher)
-	require.True(t, ok)
+	pusher := newGitPusher()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := runner.validate(testCase.config)
+			err := pusher.validate(testCase.config)
 			if len(testCase.expectedProblems) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -145,7 +145,7 @@ func Test_gitPusher_validate(t *testing.T) {
 	}
 }
 
-func Test_gitPusher_runPromotionStep(t *testing.T) {
+func Test_gitPusher_push(t *testing.T) {
 	// Set up a test Git server in-process
 	service := gitkit.New(
 		gitkit.Config{
@@ -194,27 +194,24 @@ func Test_gitPusher_runPromotionStep(t *testing.T) {
 	require.NoError(t, err)
 
 	// Commit the changes similarly to how gitCommitter would
-	// have. It will be gitPushStepRunner's job to push this commit.
+	// have. It will be gitPushers's job to push this commit.
 	err = workTree.AddAllAndCommit("Initial commit")
 	require.NoError(t, err)
 
 	// Now we can proceed to test gitPusher...
 
-	r := newGitPusher()
-	runner, ok := r.(*gitPushPusher)
-	require.True(t, ok)
-	require.NotNil(t, runner.branchMus)
+	pusher := newGitPusher()
+	require.NotNil(t, pusher.branchMus)
 
-	res, err := runner.runPromotionStep(
-		context.Background(),
-		&PromotionStepContext{
-			Project:       "fake-project",
-			Stage:         "fake-stage",
-			Promotion:     "fake-promotion",
-			WorkDir:       workDir,
-			CredentialsDB: &credentials.FakeDB{},
+	res, err := pusher.push(
+		context.WithValue(context.Background(), credentialsDBContextKey{}, &credentials.FakeDB{}),
+		&dirsdk.PromotionStepContext{
+			Project:   "fake-project",
+			Stage:     "fake-stage",
+			Promotion: "fake-promotion",
+			WorkDir:   workDir,
 		},
-		GitPushConfig{
+		builtins.GitPushConfig{
 			Path:                 "master",
 			GenerateTargetBranch: true,
 		},

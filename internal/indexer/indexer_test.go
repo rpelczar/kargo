@@ -12,9 +12,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	rbacapi "github.com/akuity/kargo/api/rbac/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/argocd"
+	rbacapi "github.com/akuity/kargo/internal/rbac/v1alpha1"
 )
 
 func TestEventsByInvolvedObjectAPIGroup(t *testing.T) {

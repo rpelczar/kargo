@@ -21,12 +21,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	rolloutsapi "github.com/akuity/kargo/api/rollouts/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/conditions"
-	rolloutsapi "github.com/akuity/kargo/internal/controller/rollouts/api/v1alpha1"
 	"github.com/akuity/kargo/internal/directives"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/indexer"
 	fakeevent "github.com/akuity/kargo/internal/kubernetes/event/fake"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 func TestRegularStageReconciler_Reconcile(t *testing.T) {
@@ -1394,7 +1396,7 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 	tests := []struct {
 		name          string
 		stage         *kargoapi.Stage
-		checkHealthFn func(context.Context, directives.HealthCheckContext, []directives.HealthCheckStep) kargoapi.Health
+		checkHealthFn func(context.Context, dirsdk.HealthCheckContext, []dirsdk.HealthCheckStep) kargoapi.Health
 		assertions    func(*testing.T, kargoapi.StageStatus)
 	}{
 		{
@@ -1494,8 +1496,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				dirsdk.HealthCheckContext,
+				[]dirsdk.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateHealthy}
 			},
@@ -1532,8 +1534,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				dirsdk.HealthCheckContext,
+				[]dirsdk.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{
 					Status: kargoapi.HealthStateUnhealthy,
@@ -1577,8 +1579,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				dirsdk.HealthCheckContext,
+				[]dirsdk.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateNotApplicable}
 			},
@@ -1613,8 +1615,8 @@ func TestRegularStageReconciler_assessHealth(t *testing.T) {
 			},
 			checkHealthFn: func(
 				context.Context,
-				directives.HealthCheckContext,
-				[]directives.HealthCheckStep,
+				dirsdk.HealthCheckContext,
+				[]dirsdk.HealthCheckStep,
 			) kargoapi.Health {
 				return kargoapi.Health{Status: kargoapi.HealthStateUnknown}
 			},
@@ -3199,7 +3201,7 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 		name             string
 		stage            *kargoapi.Stage
 		freightCol       kargoapi.FreightCollection
-		req              *kargoapi.VerificationRequest
+		req              *helpers.VerificationRequest
 		objects          []client.Object
 		rolloutsDisabled bool
 		assertions       func(*testing.T, client.Client, *kargoapi.VerificationInfo, error)
@@ -3351,7 +3353,7 @@ func TestRegularStageReconciler_startVerification(t *testing.T) {
 					},
 				},
 			},
-			req: &kargoapi.VerificationRequest{
+			req: &helpers.VerificationRequest{
 				ID:           "prev-verification",
 				Actor:        "test-user",
 				ControlPlane: true,
@@ -3765,7 +3767,7 @@ func TestRegularStageReconciler_abortVerification(t *testing.T) {
 	tests := []struct {
 		name             string
 		freightCol       kargoapi.FreightCollection
-		req              *kargoapi.VerificationRequest
+		req              *helpers.VerificationRequest
 		objects          []client.Object
 		rolloutsDisabled bool
 		interceptor      interceptor.Funcs
@@ -4024,7 +4026,7 @@ func TestRegularStageReconciler_abortVerification(t *testing.T) {
 					},
 				},
 			},
-			req: &kargoapi.VerificationRequest{
+			req: &helpers.VerificationRequest{
 				ID:    "test-verification",
 				Actor: "test-user",
 			},

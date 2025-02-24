@@ -18,6 +18,7 @@ import (
 	"github.com/akuity/kargo/api/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/directives"
+	"github.com/akuity/kargo/internal/helpers"
 	fakeevent "github.com/akuity/kargo/internal/kubernetes/event/fake"
 )
 
@@ -258,7 +259,7 @@ func TestReconcile(t *testing.T) {
 						now,
 					)
 					p.Annotations = map[string]string{
-						kargoapi.AnnotationKeyAbort: string(kargoapi.AbortActionTerminate),
+						kargoapi.AnnotationKeyAbort: string(helpers.AbortActionTerminate),
 					}
 					return p
 				}(),
@@ -290,7 +291,7 @@ func TestReconcile(t *testing.T) {
 			terminateWasCalled := false
 			r.terminatePromotionFn = func(
 				_ context.Context,
-				_ *kargoapi.AbortPromotionRequest,
+				_ *helpers.AbortPromotionRequest,
 				promotion *kargoapi.Promotion,
 				_ *kargoapi.Freight,
 			) error {
@@ -342,7 +343,7 @@ func Test_reconciler_terminatePromotion(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		req         kargoapi.AbortPromotionRequest
+		req         helpers.AbortPromotionRequest
 		promo       *kargoapi.Promotion
 		freight     *kargoapi.Freight
 		interceptor interceptor.Funcs
@@ -370,7 +371,7 @@ func Test_reconciler_terminatePromotion(t *testing.T) {
 		},
 		{
 			name: "emits event with actor",
-			req: kargoapi.AbortPromotionRequest{
+			req: helpers.AbortPromotionRequest{
 				Actor: "fake-actor",
 			},
 			promo: newPromo(

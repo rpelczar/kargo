@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 // Promote implements the Engine interface.
@@ -54,11 +55,11 @@ func (e *SimpleEngine) executeSteps(
 	// run.
 	state := promoCtx.State.DeepCopy()
 	if state == nil {
-		state = make(State)
+		state = make(dirsdk.State)
 	}
 
 	var (
-		healthChecks  []HealthCheckStep
+		healthChecks  []dirsdk.HealthCheckStep
 		err           error
 		stepExecMetas = promoCtx.StepExecutionMetadata.DeepCopy()
 	)
@@ -91,8 +92,8 @@ func (e *SimpleEngine) executeSteps(
 			}, fmt.Errorf("error getting step alias for step %d: %w", i, err)
 		}
 
-		// Get the PromotionStepRunner for the step.
-		reg, err := e.registry.GetPromotionStepRunnerRegistration(step.Kind)
+		// Get the Promoter for the step.
+		promoter, err := e.registry.GetPromoter(step.Kind)
 		if err != nil {
 			return PromotionResult{
 				Status:                kargoapi.PromotionPhaseErrored,
@@ -100,7 +101,7 @@ func (e *SimpleEngine) executeSteps(
 				StepExecutionMetadata: stepExecMetas,
 				State:                 state,
 				HealthCheckSteps:      healthChecks,
-			}, fmt.Errorf("error getting runner for step %d: %w", i, err)
+			}, fmt.Errorf("error getting promoter for step %d: %w", i, err)
 		}
 
 		// If we don't have metadata for this step yet, create it.
@@ -135,7 +136,7 @@ func (e *SimpleEngine) executeSteps(
 		if stepExecMeta.StartedAt == nil {
 			stepExecMeta.StartedAt = ptr.To(metav1.Now())
 		}
-		result, err := e.executeStep(ctx, promoCtx, step, reg, workDir, state)
+		result, err := e.executeStep(ctx, promoCtx, step, promoter, workDir, state)
 		stepExecMeta.Status = result.Status
 		stepExecMeta.Message = result.Message
 
@@ -143,7 +144,7 @@ func (e *SimpleEngine) executeSteps(
 		// inflated from tasks, we need to apply a special treatment to the output
 		// to allow it to become available under the alias of the "task".
 		aliasNamespace := getAliasNamespace(step.Alias)
-		if aliasNamespace != "" && reg.Runner.Name() == (&outputComposer{}).Name() {
+		if aliasNamespace != "" && promoter.Name() == (&outputComposer{}).Name() {
 			if state[aliasNamespace] == nil {
 				state[aliasNamespace] = make(map[string]any)
 			}
@@ -216,7 +217,7 @@ func (e *SimpleEngine) executeSteps(
 			// If we get to here, the error is POTENTIALLY recoverable.
 			stepExecMeta.ErrorCount++
 			// Check if the error threshold has been met.
-			errorThreshold := step.GetErrorThreshold(reg.Runner)
+			errorThreshold := step.GetErrorThreshold(promoter)
 			if stepExecMeta.ErrorCount >= errorThreshold {
 				// The error threshold has been met.
 				stepExecMeta.FinishedAt = ptr.To(metav1.Now())
@@ -238,7 +239,7 @@ func (e *SimpleEngine) executeSteps(
 		// threshold. Now we need to check if the timeout has elapsed. A nil timeout
 		// or any non-positive timeout interval are treated as NO timeout, although
 		// a nil timeout really shouldn't happen.
-		timeout := step.GetTimeout(reg.Runner)
+		timeout := step.GetTimeout(promoter)
 		if timeout != nil && *timeout > 0 && metav1.Now().Sub(stepExecMeta.StartedAt.Time) > *timeout {
 			// Timeout has elapsed.
 			stepExecMeta.FinishedAt = ptr.To(metav1.Now())
@@ -292,45 +293,43 @@ func (e *SimpleEngine) executeStep(
 	ctx context.Context,
 	promoCtx PromotionContext,
 	step PromotionStep,
-	reg PromotionStepRunnerRegistration,
+	promoter Promoter,
 	workDir string,
-	state State,
-) (PromotionStepResult, error) {
-	stepCtx, err := e.preparePromotionStepContext(ctx, promoCtx, step, reg.Permissions, workDir, state)
+	state dirsdk.State,
+) (*dirsdk.PromotionStepResult, error) {
+	ctx, stepCtx, err := e.preparePromotionStepContext(ctx, promoCtx, step, workDir, state)
 	if err != nil {
 		// TODO(krancour): We're not yet distinguishing between retryable and
 		// non-retryable errors. When we start to do this, failure to prepare the
 		// step context (likely due to invalid configuration) should be considered
 		// non-retryable.
-		return PromotionStepResult{
+		return &dirsdk.PromotionStepResult{
 			Status: kargoapi.PromotionPhaseErrored,
 		}, err
 	}
-
-	result, err := reg.Runner.RunPromotionStep(ctx, stepCtx)
+	result, err := promoter.Promote(ctx, stepCtx)
 	if err != nil {
 		err = fmt.Errorf("failed to run step %q: %w", step.Kind, err)
 	}
 	return result, err
 }
 
-// preparePromotionStepContext prepares a PromotionStepContext for a PromotionStep.
+// preparePromotionStepContext prepares a dirsdk.PromotionStepContext for a PromotionStep.
 func (e *SimpleEngine) preparePromotionStepContext(
 	ctx context.Context,
 	promoCtx PromotionContext,
 	step PromotionStep,
-	permissions StepRunnerPermissions,
 	workDir string,
-	state State,
-) (*PromotionStepContext, error) {
+	state dirsdk.State,
+) (context.Context, *dirsdk.PromotionStepContext, error) {
 	stateCopy := state.DeepCopy()
 
 	stepCfg, err := step.GetConfig(ctx, e.kargoClient, promoCtx, stateCopy)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get step config: %w", err)
+		return ctx, nil, fmt.Errorf("failed to get step config: %w", err)
 	}
 
-	stepCtx := &PromotionStepContext{
+	stepCtx := &dirsdk.PromotionStepContext{
 		UIBaseURL:       promoCtx.UIBaseURL,
 		WorkDir:         workDir,
 		SharedState:     stateCopy,
@@ -342,18 +341,10 @@ func (e *SimpleEngine) preparePromotionStepContext(
 		FreightRequests: promoCtx.FreightRequests,
 		Freight:         promoCtx.Freight,
 	}
-
-	if permissions.AllowCredentialsDB {
-		stepCtx.CredentialsDB = e.credentialsDB
-	}
-	if permissions.AllowKargoClient {
-		stepCtx.KargoClient = e.kargoClient
-	}
-	if permissions.AllowArgoCDClient {
-		stepCtx.ArgoCDClient = e.argoCDClient
-	}
-
-	return stepCtx, nil
+	ctx = contextWithKargoClient(ctx, e.kargoClient)
+	ctx = contextWithArgocdClient(ctx, e.argoCDClient)
+	ctx = contextWithCredentialsDB(ctx, e.credentialsDB)
+	return ctx, stepCtx, nil
 }
 
 // stepAlias returns the alias for a step. If the alias is empty, a default

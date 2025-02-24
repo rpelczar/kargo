@@ -14,24 +14,26 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_gitCloner_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           dirsdk.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "repoURL not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): repoURL is required",
 			},
 		},
 		{
 			name: "repoURL is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"repoURL": "",
 			},
 			expectedProblems: []string{
@@ -40,15 +42,15 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name:   "no checkout specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): checkout is required",
 			},
 		},
 		{
 			name: "checkout is an empty array",
-			config: Config{
-				"checkout": []Config{},
+			config: dirsdk.Config{
+				"checkout": []dirsdk.Config{},
 			},
 			expectedProblems: []string{
 				"checkout: Array must have at least 1 items",
@@ -56,8 +58,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name: "checkout path is not specified",
-			config: Config{
-				"checkout": []Config{{}},
+			config: dirsdk.Config{
+				"checkout": []dirsdk.Config{{}},
 			},
 			expectedProblems: []string{
 				"checkout.0: path is required",
@@ -65,8 +67,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name: "checkout path is empty string",
-			config: Config{
-				"checkout": []Config{{
+			config: dirsdk.Config{
+				"checkout": []dirsdk.Config{{
 					"path": "",
 				}},
 			},
@@ -77,8 +79,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		{
 			name: "branch and commit are both specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
-				"checkout": []Config{{
+			config: dirsdk.Config{
+				"checkout": []dirsdk.Config{{
 					"branch": "fake-branch",
 					"commit": "fake-commit",
 				}},
@@ -90,8 +92,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		{
 			name: "branch and tag are both specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
-				"checkout": []Config{{
+			config: dirsdk.Config{
+				"checkout": []dirsdk.Config{{
 					"branch": "fake-branch",
 					"tag":    "fake-tag",
 				}},
@@ -103,8 +105,8 @@ func Test_gitCloner_validate(t *testing.T) {
 		{
 			name: "commit and tag are both specified",
 			// These are meant to be mutually exclusive.
-			config: Config{
-				"checkout": []Config{{
+			config: dirsdk.Config{
+				"checkout": []dirsdk.Config{{
 					"commit": "fake-commit",
 					"tag":    "fake-tag",
 				}},
@@ -115,9 +117,9 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 		{
 			name: "valid kitchen sink",
-			config: Config{
+			config: dirsdk.Config{
 				"repoURL": "https://github.com/example/repo.git",
-				"checkout": []Config{
+				"checkout": []dirsdk.Config{
 					{
 						"path": "/fake/path/0",
 					},
@@ -174,13 +176,11 @@ func Test_gitCloner_validate(t *testing.T) {
 		},
 	}
 
-	r := newGitCloner()
-	runner, ok := r.(*gitCloner)
-	require.True(t, ok)
+	cloner := newGitCloner()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := runner.validate(testCase.config)
+			err := cloner.validate(testCase.config)
 			if len(testCase.expectedProblems) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -192,7 +192,7 @@ func Test_gitCloner_validate(t *testing.T) {
 	}
 }
 
-func Test_gitCloner_runPromotionStep(t *testing.T) {
+func Test_gitCloner_clone(t *testing.T) {
 	// Set up a test Git server in-process
 	service := gitkit.New(
 		gitkit.Config{
@@ -223,21 +223,18 @@ func Test_gitCloner_runPromotionStep(t *testing.T) {
 
 	// Now we can proceed to test gitCloner...
 
-	r := newGitCloner()
-	runner, ok := r.(*gitCloner)
-	require.True(t, ok)
+	cloner := newGitCloner()
 
-	stepCtx := &PromotionStepContext{
-		CredentialsDB: &credentials.FakeDB{},
-		WorkDir:       t.TempDir(),
+	stepCtx := &dirsdk.PromotionStepContext{
+		WorkDir: t.TempDir(),
 	}
 
-	res, err := runner.runPromotionStep(
-		context.Background(),
+	res, err := cloner.clone(
+		context.WithValue(context.Background(), credentialsDBContextKey{}, &credentials.FakeDB{}),
 		stepCtx,
-		GitCloneConfig{
+		builtins.GitCloneConfig{
 			RepoURL: fmt.Sprintf("%s/test.git", server.URL),
-			Checkout: []Checkout{
+			Checkout: []builtins.Checkout{
 				{
 					Commit: commitID,
 					Path:   "src",

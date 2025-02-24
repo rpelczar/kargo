@@ -13,8 +13,9 @@ import (
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/api/user"
 	"github.com/akuity/kargo/internal/event"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/kargo"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 // PromoteToStage creates a Promotion resource to transition a specified Stage
@@ -132,7 +133,7 @@ func (s *server) isFreightAvailable(
 	stage *kargoapi.Stage,
 	freight *kargoapi.Freight,
 ) bool {
-	return stage.IsFreightAvailable(freight)
+	return helpers.IsFreightAvailable(stage, freight)
 }
 
 func (s *server) recordPromotionCreatedEvent(
@@ -143,7 +144,7 @@ func (s *server) recordPromotionCreatedEvent(
 	var actor string
 	msg := fmt.Sprintf("Promotion created for Stage %q", p.Spec.Stage)
 	if u, ok := user.InfoFromContext(ctx); ok {
-		actor = kargoapi.FormatEventUserActor(u)
+		actor = helpers.FormatEventUserActor(u)
 		msg += fmt.Sprintf(" by %q", actor)
 	}
 

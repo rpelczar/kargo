@@ -14,8 +14,9 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/api/user"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/kubeclient"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 func (s *server) ApproveFreight(
@@ -100,7 +101,7 @@ func (s *server) ApproveFreight(
 		return nil, err
 	}
 
-	if freight.IsApprovedFor(stageName) {
+	if helpers.IsApprovedFor(freight, stageName) {
 		return &connect.Response[svcv1alpha1.ApproveFreightResponse]{}, nil
 	}
 
@@ -108,7 +109,7 @@ func (s *server) ApproveFreight(
 	if newStatus.ApprovedFor == nil {
 		newStatus.ApprovedFor = make(map[string]kargoapi.ApprovedStage)
 	}
-	newStatus.AddApprovedStage(stageName, time.Now())
+	helpers.AddApprovedStage(&newStatus, stageName, time.Now())
 
 	if err := s.patchFreightStatusFn(ctx, freight, newStatus); err != nil {
 		return nil, fmt.Errorf("patch status: %w", err)
@@ -117,13 +118,13 @@ func (s *server) ApproveFreight(
 	var actor string
 	eventMsg := fmt.Sprintf("Freight approved for Stage %q", stageName)
 	if u, ok := user.InfoFromContext(ctx); ok {
-		actor = kargoapi.FormatEventUserActor(u)
+		actor = helpers.FormatEventUserActor(u)
 		eventMsg += fmt.Sprintf(" by %q", actor)
 	}
 
 	s.recorder.AnnotatedEventf(
 		freight,
-		kargoapi.NewFreightApprovedEventAnnotations(actor, freight, stageName),
+		helpers.NewFreightApprovedEventAnnotations(actor, freight, stageName),
 		corev1.EventTypeNormal,
 		kargoapi.EventReasonFreightApproved,
 		eventMsg,

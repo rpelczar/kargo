@@ -8,13 +8,14 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
 )
 
 // CheckHealth implements the Engine interface.
 func (e *SimpleEngine) CheckHealth(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
-	steps []HealthCheckStep,
+	healthCtx dirsdk.HealthCheckContext,
+	steps []dirsdk.HealthCheckStep,
 ) kargoapi.Health {
 	status, issues, output := e.executeHealthChecks(ctx, healthCtx, steps)
 	if len(output) == 0 {
@@ -39,13 +40,13 @@ func (e *SimpleEngine) CheckHealth(
 // executeHealthChecks executes a list of HealthCheckSteps in sequence.
 func (e *SimpleEngine) executeHealthChecks(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
-	steps []HealthCheckStep,
-) (kargoapi.HealthState, []string, []State) {
+	healthCtx dirsdk.HealthCheckContext,
+	steps []dirsdk.HealthCheckStep,
+) (kargoapi.HealthState, []string, []dirsdk.State) {
 	var (
 		aggregatedStatus = kargoapi.HealthStateHealthy
 		aggregatedIssues []string
-		aggregatedOutput = make([]State, 0, len(steps))
+		aggregatedOutput = make([]dirsdk.State, 0, len(steps))
 	)
 
 	for _, step := range steps {
@@ -72,44 +73,36 @@ func (e *SimpleEngine) executeHealthChecks(
 // executeHealthCheck executes a single HealthCheckStep.
 func (e *SimpleEngine) executeHealthCheck(
 	ctx context.Context,
-	healthCtx HealthCheckContext,
-	step HealthCheckStep,
-) HealthCheckStepResult {
-	reg, err := e.registry.GetHealthCheckStepRunnerRegistration(step.Kind)
+	healthCtx dirsdk.HealthCheckContext,
+	step dirsdk.HealthCheckStep,
+) dirsdk.HealthCheckStepResult {
+	healthChecker, err := e.registry.GetHealthChecker(step.Kind)
 	if err != nil {
-		return HealthCheckStepResult{
+		return dirsdk.HealthCheckStepResult{
 			Status: kargoapi.HealthStateUnknown,
 			Issues: []string{
-				fmt.Sprintf("no runner registered for step kind %q: %s", step.Kind, err.Error()),
+				fmt.Sprintf("no HealthChecker registered for health check kind %q: %s", step.Kind, err.Error()),
 			},
 		}
 	}
-
-	stepCtx := e.prepareHealthCheckStepContext(healthCtx, step, reg)
-	return reg.Runner.RunHealthCheckStep(ctx, stepCtx)
+	return healthChecker.CheckHealth(
+		e.prepareHealthCheckStepContext(ctx, healthCtx, step),
+	)
 }
 
-// prepareHealthCheckStepContext prepares a HealthCheckStepContext for a HealthCheckStep.
+// prepareHealthCheckStepContext prepares a dirsdk.HealthCheckStepContext for a HealthCheckStep.
 func (e *SimpleEngine) prepareHealthCheckStepContext(
-	healthCtx HealthCheckContext,
-	step HealthCheckStep,
-	reg HealthCheckStepRunnerRegistration,
-) *HealthCheckStepContext {
-	stepCtx := &HealthCheckStepContext{
+	ctx context.Context,
+	healthCtx dirsdk.HealthCheckContext,
+	step dirsdk.HealthCheckStep,
+) (context.Context, *dirsdk.HealthCheckStepContext) {
+	stepCtx := &dirsdk.HealthCheckStepContext{
 		Config:  step.Config.DeepCopy(),
 		Project: healthCtx.Project,
 		Stage:   healthCtx.Stage,
 	}
-
-	if reg.Permissions.AllowCredentialsDB {
-		stepCtx.CredentialsDB = e.credentialsDB
-	}
-	if reg.Permissions.AllowKargoClient {
-		stepCtx.KargoClient = e.kargoClient
-	}
-	if reg.Permissions.AllowArgoCDClient {
-		stepCtx.ArgoCDClient = e.argoCDClient
-	}
-
-	return stepCtx
+	ctx = contextWithKargoClient(ctx, e.kargoClient)
+	ctx = contextWithArgocdClient(ctx, e.argoCDClient)
+	ctx = contextWithCredentialsDB(ctx, e.credentialsDB)
+	return ctx, stepCtx
 }

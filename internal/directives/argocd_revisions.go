@@ -2,6 +2,7 @@ package directives
 
 import (
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 // getDesiredRevisions returns the desired revisions for all sources of the given
@@ -11,7 +12,7 @@ import (
 // Sources slice. For any source whose desired revision cannot be determined,
 // the slice will contain an empty string at the corresponding index.
 func (a *argocdUpdater) getDesiredRevisions(
-	update *ArgoCDAppUpdate,
+	update *builtins.ArgoCDAppUpdate,
 	app *argocd.Application,
 ) []string {
 	if app == nil {
@@ -40,9 +41,9 @@ func (a *argocdUpdater) getDesiredRevisions(
 // findSourceUpdate finds and returns the ArgoCDSourceUpdate that targets the
 // given source. If no such update exists, it returns nil.
 func (a *argocdUpdater) findSourceUpdate(
-	update *ArgoCDAppUpdate,
+	update *builtins.ArgoCDAppUpdate,
 	src argocd.ApplicationSource,
-) *ArgoCDAppSourceUpdate {
+) *builtins.ArgoCDAppSourceUpdate {
 	for i := range update.Sources {
 		sourceUpdate := &update.Sources[i]
 		if sourceUpdate.RepoURL == src.RepoURL && sourceUpdate.Chart == src.Chart {

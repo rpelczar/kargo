@@ -12,6 +12,7 @@ import (
 
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	"github.com/akuity/kargo/internal/api/user"
+	"github.com/akuity/kargo/internal/helpers"
 )
 
 const (
@@ -67,7 +68,7 @@ func (b *PromotionBuilder) Build(
 	// Build metadata
 	annotations := make(map[string]string)
 	if u, ok := user.InfoFromContext(ctx); ok {
-		annotations[kargoapi.AnnotationKeyCreateActor] = kargoapi.FormatEventUserActor(u)
+		annotations[kargoapi.AnnotationKeyCreateActor] = helpers.FormatEventUserActor(u)
 	}
 
 	promotion := kargoapi.Promotion{

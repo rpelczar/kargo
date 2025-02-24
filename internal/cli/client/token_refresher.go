@@ -12,7 +12,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/akuity/kargo/internal/cli/config"
-	v1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	v1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 // tokenRefresher is a component that helps to refresh tokens.

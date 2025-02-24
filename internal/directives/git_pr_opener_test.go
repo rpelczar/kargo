@@ -15,24 +15,26 @@ import (
 	"github.com/akuity/kargo/internal/controller/git"
 	"github.com/akuity/kargo/internal/credentials"
 	"github.com/akuity/kargo/internal/gitprovider"
+	dirsdk "github.com/akuity/kargo/pkg/directives"
+	builtins "github.com/akuity/kargo/pkg/x/directives/builtins"
 )
 
 func Test_gitPROpener_validate(t *testing.T) {
 	testCases := []struct {
 		name             string
-		config           Config
+		config           dirsdk.Config
 		expectedProblems []string
 	}{
 		{
 			name:   "repoURL not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): repoURL is required",
 			},
 		},
 		{
 			name: "repoURL is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"repoURL": "",
 			},
 			expectedProblems: []string{
@@ -41,14 +43,14 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name:   "targetBranch not specified",
-			config: Config{},
+			config: dirsdk.Config{},
 			expectedProblems: []string{
 				"(root): targetBranch is required",
 			},
 		},
 		{
 			name: "targetBranch is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"targetBranch": "",
 			},
 			expectedProblems: []string{
@@ -57,7 +59,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "sourceBranch is empty string",
-			config: Config{
+			config: dirsdk.Config{
 				"sourceBranch": "",
 			},
 			expectedProblems: []string{
@@ -66,7 +68,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "provider is an invalid value",
-			config: Config{
+			config: dirsdk.Config{
 				"provider": "bogus",
 			},
 			expectedProblems: []string{
@@ -75,7 +77,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "valid without explicit provider",
-			config: Config{
+			config: dirsdk.Config{
 				"repoURL":      "https://github.com/example/repo.git",
 				"sourceBranch": "fake-branch",
 				"targetBranch": "another-fake-branch",
@@ -83,7 +85,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "valid with explicit provider",
-			config: Config{
+			config: dirsdk.Config{
 				"provider":     "github",
 				"repoURL":      "https://github.com/example/repo.git",
 				"sourceBranch": "fake-branch",
@@ -92,7 +94,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 		{
 			name: "valid with custom title",
-			config: Config{
+			config: dirsdk.Config{
 				"provider":     "github",
 				"repoURL":      "https://github.com/example/repo.git",
 				"sourceBranch": "fake-branch",
@@ -102,13 +104,11 @@ func Test_gitPROpener_validate(t *testing.T) {
 		},
 	}
 
-	r := newGitPROpener()
-	runner, ok := r.(*gitPROpener)
-	require.True(t, ok)
+	opener := newGitPROpener()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := runner.validate(testCase.config)
+			err := opener.validate(testCase.config)
 			if len(testCase.expectedProblems) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -120,7 +120,7 @@ func Test_gitPROpener_validate(t *testing.T) {
 	}
 }
 
-func Test_gitPROpener_runPromotionStep(t *testing.T) {
+func Test_gitPROpener_open(t *testing.T) {
 	const testSourceBranch = "source"
 	const testTargetBranch = "target"
 
@@ -182,25 +182,22 @@ func Test_gitPROpener_runPromotionStep(t *testing.T) {
 
 	// Now we can proceed to test gitPROpener...
 
-	r := newGitPROpener()
-	runner, ok := r.(*gitPROpener)
-	require.True(t, ok)
+	opener := newGitPROpener()
 
-	res, err := runner.runPromotionStep(
-		context.Background(),
-		&PromotionStepContext{
-			Project:       "fake-project",
-			Stage:         "fake-stage",
-			WorkDir:       workDir,
-			CredentialsDB: &credentials.FakeDB{},
+	res, err := opener.open(
+		context.WithValue(context.Background(), credentialsDBContextKey{}, &credentials.FakeDB{}),
+		&dirsdk.PromotionStepContext{
+			Project: "fake-project",
+			Stage:   "fake-stage",
+			WorkDir: workDir,
 		},
-		GitOpenPRConfig{
+		builtins.GitOpenPRConfig{
 			RepoURL: testRepoURL,
 			// We get slightly better coverage by using this option
 			SourceBranch:       testSourceBranch,
 			TargetBranch:       testTargetBranch,
 			CreateTargetBranch: true,
-			Provider:           ptr.To(Provider(fakeGitProviderName)),
+			Provider:           ptr.To(builtins.Provider(fakeGitProviderName)),
 			Title:              "kargo",
 		},
 	)

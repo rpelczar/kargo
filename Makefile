@@ -73,7 +73,15 @@ format: format-go format-ui
 
 .PHONY: lint-go
 lint-go: install-golangci-lint
-	$(GOLANGCI_LINT) run --out-format=$(GO_LINT_ERROR_FORMAT)
+	{ \
+		set -e; \
+		for mod in $$(find . -maxdepth 4 -type f -name 'go.mod' | grep -v tools); do \
+			echo "Linting $$(dirname $${mod}) ..."; \
+			cd $$(dirname $${mod}); \
+			$(GOLANGCI_LINT) run --out-format=$(GO_LINT_ERROR_FORMAT) --config $(CURDIR)/.golangci.yaml; \
+			cd - > /dev/null; \
+		done; \
+	}
 
 .PHONY: format-go
 format-go:
@@ -108,13 +116,15 @@ format-ui:
 
 .PHONY: test-unit
 test-unit: install-helm
-	PATH=$(EXTENDED_PATH) go test \
-		-v \
-		-timeout=300s \
-		-race \
-		-coverprofile=coverage.txt \
-		-covermode=atomic \
-		./...
+	{ \
+		set -e; \
+		for mod in $$(find . -maxdepth 4 -type f -name 'go.mod' | grep -v tools); do \
+			echo "Testing $$(dirname $${mod}) ..."; \
+			cd $$(dirname $${mod}); \
+			PATH=$(EXTENDED_PATH) go test -v -timeout=300s -race ./...; \
+			cd - > /dev/null; \
+		done; \
+	}
 
 ################################################################################
 # Builds                                                                       #

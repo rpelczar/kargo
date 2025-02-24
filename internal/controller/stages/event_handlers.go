@@ -14,9 +14,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	rollouts "github.com/akuity/kargo/api/rollouts/v1alpha1"
 	kargoapi "github.com/akuity/kargo/api/v1alpha1"
 	argocd "github.com/akuity/kargo/internal/controller/argocd/api/v1alpha1"
-	rollouts "github.com/akuity/kargo/internal/controller/rollouts/api/v1alpha1"
+	"github.com/akuity/kargo/internal/helpers"
 	"github.com/akuity/kargo/internal/indexer"
 	"github.com/akuity/kargo/internal/logging"
 )
@@ -133,7 +134,7 @@ func (v *downstreamStageEnqueuer[T]) Update(
 func getNewlyVerifiedStages(existing, updated *kargoapi.Freight) []string {
 	var stages []string
 	for stage := range updated.Status.VerifiedIn {
-		if !existing.IsVerifiedIn(stage) {
+		if !helpers.IsVerifiedIn(existing, stage) {
 			stages = append(stages, stage)
 		}
 	}
@@ -211,7 +212,7 @@ func (a *stageEnqueuerForApprovedFreight[T]) Update(
 func getNewlyApprovedStages(existing, updated *kargoapi.Freight) []string {
 	var stages []string
 	for stage := range updated.Status.ApprovedFor {
-		if !existing.IsApprovedFor(stage) {
+		if !helpers.IsApprovedFor(existing, stage) {
 			stages = append(stages, stage)
 		}
 	}

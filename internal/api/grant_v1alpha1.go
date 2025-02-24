@@ -7,8 +7,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	rbacapi "github.com/akuity/kargo/api/rbac/v1alpha1"
-	svcv1alpha1 "github.com/akuity/kargo/pkg/api/service/v1alpha1"
+	rbacapi "github.com/akuity/kargo/internal/rbac/v1alpha1"
+	svcv1alpha1 "github.com/akuity/kargo/internal/service/v1alpha1"
 )
 
 func (s *server) Grant(
