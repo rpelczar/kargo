@@ -5,14 +5,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { generatePath, useNavigate, useParams } from 'react-router-dom';
 
 import { paths } from '@ui/config/paths';
+import { useExtensionsContext } from '@ui/extensions/extensions-context';
 import { Description } from '@ui/features/common/description';
 import { HealthStatusIcon } from '@ui/features/common/health-status/health-status-icon';
 import { StagePhaseIcon } from '@ui/features/common/stage-phase/stage-phase-icon';
 import { StagePhase } from '@ui/features/common/stage-phase/utils';
 import { useImages } from '@ui/features/project/pipelines/utils/useImages';
-import { getConfig, getStage } from '@ui/gen/internal/service/v1alpha1/service-KargoService_connectquery';
-import { RawFormat } from '@ui/gen/internal/service/v1alpha1/service_pb';
 import { Stage, VerificationInfo } from '@ui/gen/api/v1alpha1/generated_pb';
+import {
+  getConfig,
+  getStage
+} from '@ui/gen/internal/service/v1alpha1/service-KargoService_connectquery';
+import { RawFormat } from '@ui/gen/internal/service/v1alpha1/service_pb';
 import { timestampDate } from '@ui/utils/connectrpc-utils';
 import { decodeRawData } from '@ui/utils/decode-raw-data';
 
@@ -80,6 +84,8 @@ export const StageDetails = ({ stage }: { stage: Stage }) => {
   const shardKey = stage?.metadata?.labels['kargo.akuity.io/shard'] || '';
   const argocdShard = config?.argocdShards?.[shardKey];
 
+  const { stageTabs } = useExtensionsContext();
+
   return (
     <Drawer open={!!stageName} onClose={onClose} width={'80%'} closable={false}>
       {stage && (
@@ -140,7 +146,12 @@ export const StageDetails = ({ stage }: { stage: Stage }) => {
                   ) : (
                     <YamlEditor value={rawStageYaml} height='700px' isHideManagedFieldsDisplayed />
                   )
-                }
+                },
+                ...stageTabs.map((data, index) => ({
+                  children: <data.component stage={stage} />,
+                  key: String(data.label + index),
+                  label: data.label
+                }))
               ]}
             />
 
