@@ -24,11 +24,13 @@ import {
 import { Stage } from '@ui/gen/api/v1alpha1/generated_pb';
 import { ObjectMeta } from '@ui/gen/k8s.io/apimachinery/pkg/apis/meta/v1/generated_pb';
 
-// Batch streaming events: accumulate changes and flush the list-level query
-// cache update once per animation frame. Per-item callbacks (detail cache,
-// graph node updates) still fire immediately so individual views stay fresh.
-// Without batching, 400 stage events on page load trigger 400 separate
-// Pipelines re-renders, each recomputing O(n) derived hooks.
+// Throttle streaming events: each event updates the local data array and fires
+// the per-item callback immediately, but the expensive list-level cache write
+// fires at most once per THROTTLE_MS. This keeps the UI responsive during
+// bursts (e.g. 400 stage events on page load) while ensuring updates are
+// never delayed longer than the throttle window.
+const THROTTLE_MS = 2000;
+
 async function ProcessEvents<T extends { type: string }, S extends { metadata?: ObjectMeta }>(
   stream: AsyncIterable<T>,
   getData: () => S[],
@@ -38,27 +40,16 @@ async function ProcessEvents<T extends { type: string }, S extends { metadata?: 
 ) {
   let data = getData();
   let dirty = false;
-  let rafId = 0;
+  let timerId: ReturnType<typeof setTimeout> | null = null;
 
   const flush = () => {
-    rafId = 0;
+    timerId = null;
     if (!dirty) return;
     dirty = false;
     onFlush(data);
   };
 
-  const scheduleFlush = () => {
-    if (!rafId) {
-      rafId = requestAnimationFrame(flush);
-    }
-  };
-
   for await (const e of stream) {
-    // Read latest cache on first event of a batch
-    if (!dirty) {
-      data = getData();
-    }
-
     const item = getter(e);
     const index = data.findIndex((d) => d.metadata?.name === item.metadata?.name);
 
@@ -76,12 +67,16 @@ async function ProcessEvents<T extends { type: string }, S extends { metadata?: 
 
     dirty = true;
     onItem?.(item);
-    scheduleFlush();
+
+    // Throttle: schedule a flush if one isn't already pending
+    if (timerId === null) {
+      timerId = setTimeout(flush, THROTTLE_MS);
+    }
   }
 
   // Flush remaining if stream ends
-  if (rafId) {
-    cancelAnimationFrame(rafId);
+  if (timerId !== null) {
+    clearTimeout(timerId);
   }
   if (dirty) {
     onFlush(data);
