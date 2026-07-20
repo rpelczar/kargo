@@ -88,6 +88,20 @@ export type ArgoCDExtension = {
   component: (props: ArgoCDExtensionComponentProps) => React.ReactNode;
 };
 
+export type FleetsPromoteContext = {
+  stageName: string;
+  projectName: string;
+  freightName: string;
+};
+
+export type FleetsExtension = {
+  type: 'fleets';
+  onPromote: (context: FleetsPromoteContext) => void;
+  stageStatusComponent: () => React.ReactNode;
+  promotionsTabComponent: () => React.ReactNode;
+  fleetsTabComponent: () => React.ReactNode;
+};
+
 export type Extension =
   | StageTab
   | FreightTab
@@ -97,4 +111,5 @@ export type Extension =
   | PromoteTab
   | SettingsExtension
   | ProjectSettingsExtension
-  | ArgoCDExtension;
+  | ArgoCDExtension
+  | FleetsExtension;

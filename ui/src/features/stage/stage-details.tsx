@@ -1,5 +1,6 @@
 import {
   faBarsStaggered,
+  faBraille,
   faCircleCheck,
   faCircleUp,
   faGear,
@@ -38,6 +39,7 @@ import { Verifications } from './verifications';
 
 enum TabsTypes {
   PROMOTION = 'Promotion',
+  FLEET = 'Fleet',
   VERIFICATIONS = 'Verification',
   LIVE_MANIFEST = 'Live Manifest',
   FREIGHT_HISTORY = 'Freight History',
@@ -95,7 +97,7 @@ export const StageDetails = ({ stage }: { stage: Stage }) => {
   const shardKey = stage?.metadata?.labels?.[SHARD_LABEL_KEY] || '';
   const argocdShard = config?.argocdShards?.[shardKey];
 
-  const { stageTabs } = useExtensionsContext();
+  const { stageTabs, fleetsExtension } = useExtensionsContext();
 
   const stageConditions = useMemo(() => stage.status?.conditions || [], [stage.status?.conditions]);
 
@@ -158,8 +160,22 @@ export const StageDetails = ({ stage }: { stage: Stage }) => {
                   key: TabsTypes.PROMOTION,
                   label: 'Promotions',
                   icon: <FontAwesomeIcon icon={faCircleUp} />,
-                  children: <Promotions argocdShard={argocdShard} />
+                  children: fleetsExtension?.promotionsTabComponent ? (
+                    fleetsExtension.promotionsTabComponent()
+                  ) : (
+                    <Promotions argocdShard={argocdShard} />
+                  )
                 },
+                ...(fleetsExtension?.fleetsTabComponent
+                  ? [
+                      {
+                        key: TabsTypes.FLEET,
+                        label: 'Fleet',
+                        icon: <FontAwesomeIcon icon={faBraille} />,
+                        children: fleetsExtension.fleetsTabComponent()
+                      }
+                    ]
+                  : []),
                 {
                   key: TabsTypes.VERIFICATIONS,
                   label: 'Verifications',

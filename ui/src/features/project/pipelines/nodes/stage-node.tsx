@@ -14,6 +14,7 @@ import { ReactNode, useMemo } from 'react';
 import { generatePath, Link, useNavigate } from 'react-router-dom';
 
 import { paths } from '@ui/config/paths';
+import { useExtensionsContext } from '@ui/extensions/extensions-context';
 import { HealthStatusIcon } from '@ui/features/common/health-status/health-status-icon';
 import { IAction, useActionContext } from '@ui/features/project/pipelines/context/action-context';
 import { ArgoCDLink } from '@ui/features/project/pipelines/nodes/argocd-link';
@@ -49,6 +50,7 @@ export const StageNode = (props: { stage: Stage }) => {
   const dictionaryContext = useDictionaryContext();
   const graphContext = useGraphContext();
   const actionContext = useActionContext();
+  const { fleetsExtension } = useExtensionsContext();
 
   const stageNodeIndex = useMemo(() => stageIndexer.index(props.stage), [props.stage]);
 
@@ -98,6 +100,7 @@ export const StageNode = (props: { stage: Stage }) => {
               <HealthStatusIcon noTooltip className='text-[8px]' health={stageHealth} />
             </Flex>
           )}
+          {fleetsExtension?.stageStatusComponent?.()}
         </Flex>
 
         <center>

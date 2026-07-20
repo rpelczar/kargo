@@ -27,7 +27,7 @@ type PromoteProps = ModalComponentProps & {
 export const Promote = (props: PromoteProps) => {
   const actionContext = useActionContext();
   const navigate = useNavigate();
-  const { promoteTabs } = useExtensionsContext();
+  const { promoteTabs, fleetsExtension } = useExtensionsContext();
 
   const dictionaryContext = useDictionaryContext();
 
@@ -75,6 +75,15 @@ export const Promote = (props: PromoteProps) => {
   });
 
   const onPromote = () => {
+    if (fleetsExtension?.onPromote) {
+      fleetsExtension.onPromote({
+        stageName: stageName || '',
+        projectName: projectName || '',
+        freightName: props.freight?.metadata?.name || ''
+      });
+      return;
+    }
+
     const payload = {
       stage: stageName || '',
       project: projectName || '',
